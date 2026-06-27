@@ -1,6 +1,11 @@
+"use client";
+
 import Dashboard from "@/app/ui/dashboard";
+import { useLocale, LocaleSwitch } from "@/app/ui/locale-context";
 
 export default function Home() {
+  const { t } = useLocale();
+
   return (
     <div className="flex flex-col h-full min-h-screen">
       <header className="bg-white border-b border-[#e3e8ee] px-6 py-3 flex items-center justify-between sticky top-0 z-50" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
@@ -14,24 +19,19 @@ export default function Home() {
           </div>
           <span className="text-[15px] font-semibold text-[#0a2540] tracking-tight">Prism</span>
         </div>
-        <div className="flex items-center gap-4">
-          <PoolBadge />
-          <a href="/admin" className="text-[12px] text-[#8792a2] hover:text-[#635bff] transition-colors">Admin</a>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-[13px] text-[#697386]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#0caf60]" />
+            {t("online")}
+          </div>
+          <LocaleSwitch />
+          <a href="/admin" className="text-[12px] text-[#8792a2] hover:text-[#635bff] transition-colors">{t("admin")}</a>
           <div className="w-7 h-7 rounded-full bg-[#e3e8ee] flex items-center justify-center text-xs font-medium text-[#697386]">U</div>
         </div>
       </header>
       <main className="flex-1">
         <Dashboard />
       </main>
-    </div>
-  );
-}
-
-function PoolBadge() {
-  return (
-    <div className="flex items-center gap-1.5 text-[13px] text-[#697386]">
-      <span className="w-1.5 h-1.5 rounded-full bg-[#0caf60]" />
-      Online
     </div>
   );
 }
