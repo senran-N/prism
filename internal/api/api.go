@@ -47,7 +47,21 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/pool/accounts", s.handlePoolAccounts)
 	s.mux.HandleFunc("POST /api/tasks", s.handleCreateTask)
 	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.handleTaskStatus)
+	// User
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
+
+	// SSE
+	s.mux.HandleFunc("GET /api/events", s.handleSSE)
+
+	// Admin
+	s.mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
+	s.mux.HandleFunc("GET /api/admin/accounts", s.handleAdminAccounts)
+	s.mux.HandleFunc("GET /api/admin/tasks", s.handleAdminTasks)
+	s.mux.HandleFunc("GET /api/admin/users", s.handleAdminUsers)
+	s.mux.HandleFunc("GET /api/admin/config", s.handleAdminGetConfig)
+	s.mux.HandleFunc("POST /api/admin/config", s.handleAdminUpdateConfig)
+
+	// Tasks
 	s.mux.HandleFunc("GET /api/tasks/history", s.handleTaskHistory)
 	s.mux.HandleFunc("GET /api/github/login", s.handleGitHubLogin)
 	s.mux.HandleFunc("GET /api/github/callback", s.handleGitHubCallback)

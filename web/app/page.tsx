@@ -16,6 +16,7 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-4">
           <PoolBadge />
+          <a href="/admin" className="text-[12px] text-[#8792a2] hover:text-[#635bff] transition-colors">Admin</a>
           <div className="w-7 h-7 rounded-full bg-[#e3e8ee] flex items-center justify-center text-xs font-medium text-[#697386]">U</div>
         </div>
       </header>
