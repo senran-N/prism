@@ -34,6 +34,7 @@ func New(sched *scheduler.Scheduler, pool *account.Pool, cfg config.Config) *Ser
 		pool:      pool,
 		cfg:       cfg,
 	}
+	registerHoneypots(s.mux)
 	s.routes()
 	return s
 }
