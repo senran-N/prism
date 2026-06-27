@@ -1,12 +1,16 @@
 CREATE TABLE IF NOT EXISTS users (
-    id            BIGSERIAL PRIMARY KEY,
-    github_id     BIGINT UNIQUE,
-    github_login  TEXT NOT NULL DEFAULT '',
-    avatar_url    TEXT NOT NULL DEFAULT '',
-    github_token  TEXT NOT NULL DEFAULT '',
-    selected_repo TEXT NOT NULL DEFAULT '',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id              BIGSERIAL PRIMARY KEY,
+    github_id       BIGINT UNIQUE,
+    github_login    TEXT NOT NULL DEFAULT '',
+    avatar_url      TEXT NOT NULL DEFAULT '',
+    github_token    TEXT NOT NULL DEFAULT '',
+    selected_repo   TEXT NOT NULL DEFAULT '',
+    linuxdo_id      BIGINT UNIQUE,
+    linuxdo_username TEXT NOT NULL DEFAULT '',
+    linuxdo_name    TEXT NOT NULL DEFAULT '',
+    trust_level     INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS sc_accounts (

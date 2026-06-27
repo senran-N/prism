@@ -2,9 +2,23 @@
 
 import Dashboard from "@/app/ui/dashboard";
 import { useLocale, LocaleSwitch } from "@/app/ui/locale-context";
+import { LoginGate, useUser } from "@/app/ui/login-gate";
 
 export default function Home() {
+  return (
+    <LoginGate>
+      <AuthenticatedApp />
+    </LoginGate>
+  );
+}
+
+function AuthenticatedApp() {
   const { t } = useLocale();
+  const { user } = useUser();
+
+  const displayName = user?.linuxdo_name || user?.linuxdo_username || user?.github_login || "U";
+  const avatarUrl = user?.avatar_url;
+  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="flex flex-col h-full min-h-screen">
@@ -26,7 +40,14 @@ export default function Home() {
           </div>
           <LocaleSwitch />
           <a href="/admin" className="text-[12px] text-[#8792a2] hover:text-[#635bff] transition-colors">{t("admin")}</a>
-          <div className="w-7 h-7 rounded-full bg-[#e3e8ee] flex items-center justify-center text-xs font-medium text-[#697386]">U</div>
+          <div className="flex items-center gap-2">
+            {avatarUrl ? (
+              <img src={avatarUrl} className="w-7 h-7 rounded-full" alt="" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-[#e3e8ee] flex items-center justify-center text-xs font-medium text-[#697386]">{initials}</div>
+            )}
+            <span className="text-[13px] text-[#0a2540] font-medium hidden sm:inline">{displayName}</span>
+          </div>
         </div>
       </header>
       <main className="flex-1">

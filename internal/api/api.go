@@ -47,6 +47,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/pool/accounts", s.handlePoolAccounts)
 	s.mux.HandleFunc("POST /api/tasks", s.handleCreateTask)
 	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.handleTaskStatus)
+	// LinuxDo OAuth
+	s.mux.HandleFunc("GET /api/linuxdo/login", s.handleLinuxDoLogin)
+	s.mux.HandleFunc("GET /api/linuxdo/callback", s.handleLinuxDoCallback)
+	s.mux.HandleFunc("GET /api/linuxdo/status", s.handleLinuxDoStatus)
+
 	// User
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
 
@@ -212,11 +217,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{
-		"logged_in":     true,
-		"id":            user.ID,
-		"github_login":  user.GitHubLogin,
-		"avatar_url":    user.AvatarURL,
-		"selected_repo": user.SelectedRepo,
+		"logged_in":         true,
+		"id":                user.ID,
+		"github_login":      user.GitHubLogin,
+		"avatar_url":        user.AvatarURL,
+		"selected_repo":     user.SelectedRepo,
+		"linuxdo_username":  user.LinuxDoUsername,
+		"linuxdo_name":      user.LinuxDoName,
+		"trust_level":       user.TrustLevel,
 	})
 }
 

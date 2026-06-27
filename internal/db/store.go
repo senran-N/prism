@@ -2,19 +2,24 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
 // ── User ────────────────────────────────────────
 
 type User struct {
-	ID           int64  `json:"id"`
-	GitHubID     int64  `json:"github_id"`
-	GitHubLogin  string `json:"github_login"`
-	AvatarURL    string `json:"avatar_url"`
-	GitHubToken  string `json:"-"`
-	SelectedRepo string `json:"selected_repo"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              int64     `json:"id"`
+	GitHubID        int64     `json:"github_id"`
+	GitHubLogin     string    `json:"github_login"`
+	AvatarURL       string    `json:"avatar_url"`
+	GitHubToken     string    `json:"-"`
+	SelectedRepo    string    `json:"selected_repo"`
+	LinuxDoID       int64     `json:"linuxdo_id"`
+	LinuxDoUsername  string    `json:"linuxdo_username"`
+	LinuxDoName     string    `json:"linuxdo_name"`
+	TrustLevel      int       `json:"trust_level"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 func UpsertUser(githubID int64, login, avatarURL, token string) (*User, error) {
@@ -38,12 +43,42 @@ func UpsertUser(githubID int64, login, avatarURL, token string) (*User, error) {
 func GetUser(id int64) (*User, error) {
 	u := &User{}
 	err := DB.QueryRow(`
-		SELECT id, github_id, github_login, avatar_url, github_token, selected_repo, created_at
+		SELECT id, github_id, github_login, avatar_url, github_token, selected_repo,
+		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0), created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.GitHubToken, &u.SelectedRepo, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.GitHubToken, &u.SelectedRepo,
+		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
+	return u, err
+}
+
+func UpsertLinuxDoUser(linuxdoID int64, username, name, avatarTemplate string, trustLevel int) (*User, error) {
+	avatarURL := avatarTemplate
+	if strings.Contains(avatarURL, "{size}") {
+		avatarURL = strings.Replace(avatarURL, "{size}", "120", 1)
+	}
+	if avatarURL != "" && !strings.HasPrefix(avatarURL, "http") {
+		avatarURL = "https://linux.do" + avatarURL
+	}
+
+	u := &User{}
+	err := DB.QueryRow(`
+		INSERT INTO users (linuxdo_id, linuxdo_username, linuxdo_name, avatar_url, trust_level)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (linuxdo_id) DO UPDATE SET
+			linuxdo_username = EXCLUDED.linuxdo_username,
+			linuxdo_name = EXCLUDED.linuxdo_name,
+			avatar_url = EXCLUDED.avatar_url,
+			trust_level = EXCLUDED.trust_level,
+			updated_at = now()
+		RETURNING id, COALESCE(github_id, 0), github_login, avatar_url, selected_repo,
+		          linuxdo_id, linuxdo_username, linuxdo_name, trust_level, created_at
+	`, linuxdoID, username, name, avatarURL, trustLevel).Scan(
+		&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.SelectedRepo,
+		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel, &u.CreatedAt,
+	)
 	return u, err
 }
 
