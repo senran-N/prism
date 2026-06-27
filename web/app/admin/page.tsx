@@ -89,7 +89,7 @@ function OverviewTab() {
 
 function AccountsTab() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  useEffect(() => { fetch("/api/admin/accounts").then(r => r.json()).then(setAccounts); }, []);
+  useEffect(() => { fetch("/api/admin/accounts").then(r => r.json()).then(d => setAccounts(Array.isArray(d) ? d : [])); }, []);
 
   const statusColor: Record<string, string> = { ready: "text-[#0caf60] bg-[#e6f9f0]", active: "text-[#635bff] bg-[#e8e6ff]", exhausted: "text-[#df1b41] bg-[#fde8ed]", error: "text-[#df1b41] bg-[#fde8ed]" };
 
@@ -122,7 +122,7 @@ function AccountsTab() {
 
 function TasksTab() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
-  useEffect(() => { fetch("/api/admin/tasks").then(r => r.json()).then(setTasks); }, []);
+  useEffect(() => { fetch("/api/admin/tasks").then(r => r.json()).then(d => setTasks(Array.isArray(d) ? d : [])); }, []);
 
   const statusColor: Record<string, string> = { Running: "text-[#635bff] bg-[#e8e6ff]", Waiting: "text-[#f5a623] bg-[#fef6e6]", Completed: "text-[#0caf60] bg-[#e6f9f0]", Failed: "text-[#df1b41] bg-[#fde8ed]", created: "text-[#635bff] bg-[#e8e6ff]" };
 
@@ -157,7 +157,7 @@ function TasksTab() {
 
 function UsersTab() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  useEffect(() => { fetch("/api/admin/users").then(r => r.json()).then(setUsers); }, []);
+  useEffect(() => { fetch("/api/admin/users").then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : [])); }, []);
 
   return (
     <div className="bg-white rounded-lg border border-[#e3e8ee] overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
