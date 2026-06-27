@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/senran-N/prism/internal/db"
@@ -112,8 +113,10 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := db.DB.Query(`
-		SELECT u.id, u.github_login, u.avatar_url, u.selected_repo, u.created_at,
-		       count(t.id) as task_count
+		SELECT u.id, COALESCE(u.github_login, ''), u.avatar_url, u.selected_repo,
+		       COALESCE(u.linuxdo_username, ''), COALESCE(u.linuxdo_name, ''), COALESCE(u.trust_level, 0),
+		       COALESCE(u.is_banned, false), COALESCE(u.ban_reason, ''),
+		       u.created_at, count(t.id) as task_count
 		FROM users u LEFT JOIN tasks t ON u.id = t.user_id
 		GROUP BY u.id ORDER BY u.created_at DESC LIMIT 100
 	`)
@@ -124,17 +127,24 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type userView struct {
-		ID           int64     `json:"id"`
-		GitHubLogin  string    `json:"github_login"`
-		AvatarURL    string    `json:"avatar_url"`
-		SelectedRepo string    `json:"selected_repo"`
-		CreatedAt    time.Time `json:"created_at"`
-		TaskCount    int       `json:"task_count"`
+		ID              int64     `json:"id"`
+		GitHubLogin     string    `json:"github_login"`
+		AvatarURL       string    `json:"avatar_url"`
+		SelectedRepo    string    `json:"selected_repo"`
+		LinuxDoUsername  string    `json:"linuxdo_username"`
+		LinuxDoName     string    `json:"linuxdo_name"`
+		TrustLevel      int       `json:"trust_level"`
+		IsBanned        bool      `json:"is_banned"`
+		BanReason       string    `json:"ban_reason"`
+		CreatedAt       time.Time `json:"created_at"`
+		TaskCount       int       `json:"task_count"`
 	}
 	var users []userView
 	for rows.Next() {
 		var u userView
-		rows.Scan(&u.ID, &u.GitHubLogin, &u.AvatarURL, &u.SelectedRepo, &u.CreatedAt, &u.TaskCount)
+		rows.Scan(&u.ID, &u.GitHubLogin, &u.AvatarURL, &u.SelectedRepo,
+			&u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel,
+			&u.IsBanned, &u.BanReason, &u.CreatedAt, &u.TaskCount)
 		users = append(users, u)
 	}
 	if users == nil {
@@ -192,6 +202,35 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		"github_client_id":  s.cfg.GitHubClientID,
 		"base_url":          s.cfg.BaseURL,
 	})
+}
+
+// POST /api/admin/users/{id}/ban
+func (s *Server) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	userID, _ := strconv.ParseInt(id, 10, 64)
+	if err := db.BanUser(userID, req.Reason); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	log.Printf("[admin] banned user %s: %s", id, req.Reason)
+	writeJSON(w, map[string]bool{"banned": true})
+}
+
+// POST /api/admin/users/{id}/unban
+func (s *Server) handleAdminUnbanUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	userID, _ := strconv.ParseInt(id, 10, 64)
+	if err := db.UnbanUser(userID); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	log.Printf("[admin] unbanned user %s", id)
+	writeJSON(w, map[string]bool{"unbanned": true})
 }
 
 func maskSecret(s string) string {

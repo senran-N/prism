@@ -12,6 +12,9 @@ interface UserInfo {
   avatar_url?: string;
   trust_level?: number;
   selected_repo?: string;
+  is_banned?: boolean;
+  ban_reason?: string;
+  is_admin?: boolean;
 }
 
 export function useUser() {
@@ -36,6 +39,21 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   );
 
   if (!user?.logged_in) return <LoginPage />;
+
+  if (user?.is_banned) return (
+    <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center">
+      <div className="bg-white rounded-2xl border border-[#e3e8ee] p-8 w-full max-w-sm text-center" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
+        <div className="w-12 h-12 rounded-xl bg-[#fde8ed] flex items-center justify-center mx-auto mb-4">
+          <svg className="w-6 h-6 text-[#df1b41]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <h2 className="text-[18px] font-semibold text-[#0a2540] mb-2">{locale === "zh" ? "账号已被封禁" : "Account Suspended"}</h2>
+        <p className="text-[13px] text-[#697386] mb-2">{locale === "zh" ? "您的账号已被管理员封禁。" : "Your account has been suspended by an administrator."}</p>
+        {user.ban_reason && <p className="text-[13px] text-[#df1b41] bg-[#fde8ed] rounded-lg px-3 py-2">{user.ban_reason}</p>}
+      </div>
+    </div>
+  );
 
   return <>{children}</>;
 }
@@ -72,7 +90,10 @@ function LoginPage() {
         </a>
 
         <p className="text-[12px] text-[#8792a2] mt-5">
-          {isZh ? "登录即表示同意服务条款和隐私政策" : "By signing in you agree to our Terms and Privacy Policy"}
+          {isZh ? "登录即表示同意" : "By signing in you agree to our "}
+          <a href="/terms" className="text-[#635bff] hover:underline">{isZh ? "服务条款" : "Terms"}</a>
+          {isZh ? "和" : " and "}
+          <a href="/privacy" className="text-[#635bff] hover:underline">{isZh ? "隐私政策" : "Privacy Policy"}</a>
         </p>
       </div>
     </div>

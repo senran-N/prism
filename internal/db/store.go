@@ -19,7 +19,20 @@ type User struct {
 	LinuxDoUsername  string    `json:"linuxdo_username"`
 	LinuxDoName     string    `json:"linuxdo_name"`
 	TrustLevel      int       `json:"trust_level"`
+	IsBanned        bool      `json:"is_banned"`
+	BanReason       string    `json:"ban_reason"`
+	IsAdmin         bool      `json:"is_admin"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+func BanUser(id int64, reason string) error {
+	_, err := DB.Exec(`UPDATE users SET is_banned = true, ban_reason = $1, updated_at = now() WHERE id = $2`, reason, id)
+	return err
+}
+
+func UnbanUser(id int64) error {
+	_, err := DB.Exec(`UPDATE users SET is_banned = false, ban_reason = '', updated_at = now() WHERE id = $1`, id)
+	return err
 }
 
 func UpsertUser(githubID int64, login, avatarURL, token string) (*User, error) {
@@ -44,10 +57,12 @@ func GetUser(id int64) (*User, error) {
 	u := &User{}
 	err := DB.QueryRow(`
 		SELECT id, github_id, github_login, avatar_url, github_token, selected_repo,
-		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0), created_at
+		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0),
+		       COALESCE(is_banned, false), COALESCE(ban_reason, ''), COALESCE(is_admin, false), created_at
 		FROM users WHERE id = $1
 	`, id).Scan(&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.GitHubToken, &u.SelectedRepo,
-		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel, &u.CreatedAt)
+		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel,
+		&u.IsBanned, &u.BanReason, &u.IsAdmin, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

@@ -8,7 +8,7 @@ interface Stats {
 }
 interface Account { id: string; email: string; workspace_id: string; project_id: string; credits: number; status: string; github_bound: boolean; created_at: string; }
 interface TaskRow { id: string; ticket_id: string; description: string; model: string; status: string; cost: number; created_at: string; user_login: string; }
-interface UserRow { id: number; github_login: string; avatar_url: string; selected_repo: string; created_at: string; task_count: number; }
+interface UserRow { id: number; github_login: string; avatar_url: string; selected_repo: string; linuxdo_username: string; linuxdo_name: string; trust_level: number; is_banned: boolean; ban_reason: string; created_at: string; task_count: number; }
 interface Config { github_user: string; github_pass: string; github_totp: string; yyds_api_key: string; repo_id: string; github_client_id: string; base_url: string; }
 
 type Tab = "overview" | "accounts" | "tasks" | "users" | "config";
@@ -157,33 +157,90 @@ function TasksTab() {
 
 function UsersTab() {
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [banModal, setBanModal] = useState<{id: number; name: string} | null>(null);
+  const [banReason, setBanReason] = useState("");
+
   useEffect(() => { fetch("/api/admin/users").then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : [])); }, []);
 
+  async function handleBan(id: number) {
+    await fetch(`/api/admin/users/${id}/ban`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: banReason }) });
+    setUsers(users.map(u => u.id === id ? { ...u, is_banned: true, ban_reason: banReason } : u));
+    setBanModal(null); setBanReason("");
+  }
+
+  async function handleUnban(id: number) {
+    await fetch(`/api/admin/users/${id}/unban`, { method: "POST" });
+    setUsers(users.map(u => u.id === id ? { ...u, is_banned: false, ban_reason: "" } : u));
+  }
+
   return (
-    <div className="bg-white rounded-lg border border-[#e3e8ee] overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-      <table className="w-full text-[13px]">
-        <thead><tr className="border-b border-[#e3e8ee] bg-[#f6f9fc]">
-          <th className="text-left px-4 py-3 text-[#8792a2] font-medium">User</th>
-          <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Repository</th>
-          <th className="text-right px-4 py-3 text-[#8792a2] font-medium">Tasks</th>
-          <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Joined</th>
-        </tr></thead>
-        <tbody>
-          {users.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-[#8792a2]">No users yet</td></tr>}
-          {users.map(u => (
-            <tr key={u.id} className="border-b border-[#e3e8ee] hover:bg-[#f6f9fc]">
-              <td className="px-4 py-3 flex items-center gap-2">
-                {u.avatar_url && <img src={u.avatar_url} className="w-6 h-6 rounded-full" alt="" />}
-                <span className="font-medium">{u.github_login}</span>
-              </td>
-              <td className="px-4 py-3 font-mono text-[12px] text-[#697386]">{u.selected_repo || "—"}</td>
-              <td className="px-4 py-3 text-right">{u.task_count}</td>
-              <td className="px-4 py-3 text-[12px] text-[#8792a2]">{new Date(u.created_at).toLocaleDateString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="bg-white rounded-lg border border-[#e3e8ee] overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <table className="w-full text-[13px]">
+          <thead><tr className="border-b border-[#e3e8ee] bg-[#f6f9fc]">
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">User</th>
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Trust</th>
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Repository</th>
+            <th className="text-right px-4 py-3 text-[#8792a2] font-medium">Tasks</th>
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Status</th>
+            <th className="text-right px-4 py-3 text-[#8792a2] font-medium">Actions</th>
+          </tr></thead>
+          <tbody>
+            {users.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-[#8792a2]">No users yet</td></tr>}
+            {users.map(u => (
+              <tr key={u.id} className={`border-b border-[#e3e8ee] hover:bg-[#f6f9fc] ${u.is_banned ? "opacity-60" : ""}`}>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    {u.avatar_url && <img src={u.avatar_url} className="w-6 h-6 rounded-full" alt="" />}
+                    <div>
+                      <div className="font-medium">{u.linuxdo_name || u.linuxdo_username || u.github_login}</div>
+                      {u.linuxdo_username && <div className="text-[11px] text-[#8792a2]">@{u.linuxdo_username}</div>}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${u.trust_level >= 3 ? "text-[#635bff] bg-[#e8e6ff]" : u.trust_level >= 1 ? "text-[#0caf60] bg-[#e6f9f0]" : "text-[#8792a2] bg-[#f6f9fc]"}`}>
+                    TL{u.trust_level}
+                  </span>
+                </td>
+                <td className="px-4 py-3 font-mono text-[12px] text-[#697386]">{u.selected_repo || "—"}</td>
+                <td className="px-4 py-3 text-right">{u.task_count}</td>
+                <td className="px-4 py-3">
+                  {u.is_banned ? (
+                    <span className="text-[11px] font-medium text-[#df1b41] bg-[#fde8ed] px-2 py-0.5 rounded" title={u.ban_reason}>Banned</span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-[#0caf60] bg-[#e6f9f0] px-2 py-0.5 rounded">Active</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {u.is_banned ? (
+                    <button onClick={() => handleUnban(u.id)} className="text-[12px] text-[#0caf60] hover:text-[#0a9050] font-medium">Unban</button>
+                  ) : (
+                    <button onClick={() => setBanModal({ id: u.id, name: u.linuxdo_name || u.linuxdo_username || u.github_login })} className="text-[12px] text-[#df1b41] hover:text-[#ff4d6a] font-medium">Ban</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Ban Modal */}
+      {banModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setBanModal(null)}>
+          <div className="bg-white rounded-xl border border-[#e3e8ee] p-6 w-full max-w-md" style={{ boxShadow: "0 10px 40px rgba(0,0,0,0.12)" }} onClick={e => e.stopPropagation()}>
+            <h3 className="text-[16px] font-semibold text-[#0a2540] mb-1">Ban User</h3>
+            <p className="text-[13px] text-[#697386] mb-4">Ban <strong>{banModal.name}</strong> from using Prism.</p>
+            <input type="text" value={banReason} onChange={e => setBanReason(e.target.value)} placeholder="Reason for ban (optional)"
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-lg px-3 py-2 text-[13px] mb-4 focus:outline-none focus:ring-2 focus:ring-[#df1b41]/20 focus:border-[#df1b41]" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setBanModal(null)} className="px-4 py-2 text-[13px] text-[#697386] hover:text-[#0a2540]">Cancel</button>
+              <button onClick={() => handleBan(banModal.id)} className="px-4 py-2 text-[13px] font-medium text-white bg-[#df1b41] hover:bg-[#c4162f] rounded-lg">Confirm Ban</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

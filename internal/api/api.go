@@ -65,6 +65,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/users", s.handleAdminUsers)
 	s.mux.HandleFunc("GET /api/admin/config", s.handleAdminGetConfig)
 	s.mux.HandleFunc("POST /api/admin/config", s.handleAdminUpdateConfig)
+	s.mux.HandleFunc("POST /api/admin/users/{id}/ban", s.handleAdminBanUser)
+	s.mux.HandleFunc("POST /api/admin/users/{id}/unban", s.handleAdminUnbanUser)
 
 	// Tasks
 	s.mux.HandleFunc("GET /api/tasks/history", s.handleTaskHistory)
@@ -225,6 +227,9 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"linuxdo_username":  user.LinuxDoUsername,
 		"linuxdo_name":      user.LinuxDoName,
 		"trust_level":       user.TrustLevel,
+		"is_banned":         user.IsBanned,
+		"ban_reason":        user.BanReason,
+		"is_admin":          user.IsAdmin,
 	})
 }
 
