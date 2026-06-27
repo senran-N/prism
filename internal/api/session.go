@@ -22,6 +22,7 @@ func (s *Server) setSession(w http.ResponseWriter, userID int64) {
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isHTTPS(s.cfg.BaseURL),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400 * 30,
 	})
@@ -60,6 +61,8 @@ func signSession(secret string, userID int64) string {
 	return data + "." + sig
 }
 
+const maxSessionAge = 30 * 24 * time.Hour
+
 func verifySession(secret, value string) (int64, bool) {
 	parts := strings.SplitN(value, ".", 3)
 	if len(parts) != 3 {
@@ -74,6 +77,13 @@ func verifySession(secret, value string) (int64, bool) {
 	}
 	userID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
+		return 0, false
+	}
+	ts, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	if time.Since(time.Unix(ts, 0)) > maxSessionAge {
 		return 0, false
 	}
 	return userID, true

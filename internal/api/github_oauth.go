@@ -14,11 +14,12 @@ import (
 
 // GET /api/github/login — redirect user to GitHub OAuth
 func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
+	state := generateOAuthState()
 	params := url.Values{
 		"client_id":    {s.cfg.GitHubClientID},
 		"redirect_uri": {s.cfg.BaseURL + "/api/github/callback"},
 		"scope":        {"repo,read:user"},
-		"state":        {"prism"},
+		"state":        {state},
 	}
 	http.Redirect(w, r, "https://github.com/login/oauth/authorize?"+params.Encode(), http.StatusFound)
 }
@@ -26,8 +27,13 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 // GET /api/github/callback — GitHub redirects here with ?code=
 func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
 	if code == "" {
 		http.Error(w, "missing code", 400)
+		return
+	}
+	if !validateOAuthState(state) {
+		http.Error(w, "invalid state parameter", 400)
 		return
 	}
 

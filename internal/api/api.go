@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/senran-N/prism/internal/account"
 	"github.com/senran-N/prism/internal/config"
@@ -42,34 +43,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() {
+	// Public
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
-	s.mux.HandleFunc("GET /api/pool/stats", s.handlePoolStats)
-	s.mux.HandleFunc("GET /api/pool/accounts", s.handlePoolAccounts)
-	s.mux.HandleFunc("POST /api/tasks", s.handleCreateTask)
-	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.handleTaskStatus)
-	// LinuxDo OAuth
-	s.mux.HandleFunc("GET /api/linuxdo/login", s.handleLinuxDoLogin)
-	s.mux.HandleFunc("GET /api/linuxdo/callback", s.handleLinuxDoCallback)
-	s.mux.HandleFunc("GET /api/linuxdo/status", s.handleLinuxDoStatus)
-
-	// User
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
 
-	// SSE
-	s.mux.HandleFunc("GET /api/events", s.handleSSE)
+	// OAuth (rate limited)
+	s.mux.HandleFunc("GET /api/linuxdo/login", s.rateLimit(10, time.Minute, s.handleLinuxDoLogin))
+	s.mux.HandleFunc("GET /api/linuxdo/callback", s.rateLimit(10, time.Minute, s.handleLinuxDoCallback))
+	s.mux.HandleFunc("GET /api/linuxdo/status", s.handleLinuxDoStatus)
 
-	// Admin
-	s.mux.HandleFunc("GET /api/admin/stats", s.handleAdminStats)
-	s.mux.HandleFunc("GET /api/admin/accounts", s.handleAdminAccounts)
-	s.mux.HandleFunc("GET /api/admin/tasks", s.handleAdminTasks)
-	s.mux.HandleFunc("GET /api/admin/users", s.handleAdminUsers)
-	s.mux.HandleFunc("GET /api/admin/config", s.handleAdminGetConfig)
-	s.mux.HandleFunc("POST /api/admin/config", s.handleAdminUpdateConfig)
-	s.mux.HandleFunc("POST /api/admin/users/{id}/ban", s.handleAdminBanUser)
-	s.mux.HandleFunc("POST /api/admin/users/{id}/unban", s.handleAdminUnbanUser)
+	// Authenticated user endpoints
+	s.mux.HandleFunc("POST /api/tasks", s.requireAuth(limitBody(1<<20, s.handleCreateTask)))
+	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.requireAuth(s.handleTaskStatus))
+	s.mux.HandleFunc("GET /api/tasks/history", s.requireAuth(s.handleTaskHistory))
+	s.mux.HandleFunc("GET /api/events", s.requireAuth(s.handleSSE))
 
-	// Tasks
-	s.mux.HandleFunc("GET /api/tasks/history", s.handleTaskHistory)
+	// Admin only
+	s.mux.HandleFunc("GET /api/admin/stats", s.requireAdmin(s.handleAdminStats))
+	s.mux.HandleFunc("GET /api/admin/accounts", s.requireAdmin(s.handleAdminAccounts))
+	s.mux.HandleFunc("GET /api/admin/tasks", s.requireAdmin(s.handleAdminTasks))
+	s.mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
+	s.mux.HandleFunc("GET /api/admin/config", s.requireAdmin(s.handleAdminGetConfig))
+	s.mux.HandleFunc("POST /api/admin/config", s.requireAdmin(limitBody(1<<16, s.handleAdminUpdateConfig)))
+	s.mux.HandleFunc("POST /api/admin/users/{id}/ban", s.requireAdmin(limitBody(1<<16, s.handleAdminBanUser)))
+	s.mux.HandleFunc("POST /api/admin/users/{id}/unban", s.requireAdmin(s.handleAdminUnbanUser))
+
+	// Pool info (admin only)
+	s.mux.HandleFunc("GET /api/pool/stats", s.requireAdmin(s.handlePoolStats))
+	s.mux.HandleFunc("GET /api/pool/accounts", s.requireAdmin(s.handlePoolAccounts))
 	s.mux.HandleFunc("GET /api/github/login", s.handleGitHubLogin)
 	s.mux.HandleFunc("GET /api/github/callback", s.handleGitHubCallback)
 	s.mux.HandleFunc("POST /api/github/select-repo", s.handleSelectRepo)
@@ -252,16 +253,3 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, tasks)
 }
 
-// CORS middleware for development
-func CORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(204)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}

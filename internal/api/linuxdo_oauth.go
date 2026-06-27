@@ -19,10 +19,11 @@ const (
 
 // GET /api/linuxdo/login
 func (s *Server) handleLinuxDoLogin(w http.ResponseWriter, r *http.Request) {
+	state := generateOAuthState()
 	params := url.Values{
 		"response_type": {"code"},
 		"client_id":     {s.cfg.LinuxDoClientID},
-		"state":         {"prism"},
+		"state":         {state},
 	}
 	http.Redirect(w, r, linuxdoAuthorize+"?"+params.Encode(), http.StatusFound)
 }
@@ -30,8 +31,13 @@ func (s *Server) handleLinuxDoLogin(w http.ResponseWriter, r *http.Request) {
 // GET /api/linuxdo/callback
 func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
 	if code == "" {
 		http.Error(w, "missing code", 400)
+		return
+	}
+	if !validateOAuthState(state) {
+		http.Error(w, "invalid state parameter", 400)
 		return
 	}
 

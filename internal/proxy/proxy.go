@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"path"
 	"strings"
 )
 
@@ -23,8 +24,16 @@ func New(jar *cookiejar.Jar) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Path: /proxy/tickets/{tid}/implementations/{iid}
 	targetPath := strings.TrimPrefix(r.URL.Path, "/proxy")
+	targetPath = path.Clean(targetPath)
+	if strings.Contains(targetPath, "..") {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	if !strings.HasPrefix(targetPath, "/tickets/") {
+		http.Error(w, "forbidden", 403)
+		return
+	}
 	targetURL := scBase + targetPath
 
 	client := &http.Client{Jar: h.jar}
