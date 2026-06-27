@@ -1,0 +1,32 @@
+# Go
+prism
+*.exe
+*.test
+*.out
+cmd/debug/
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env & secrets
+.env
+*.log
+sc_accounts.json
+create_ticket.py
+sc_register.py
+sc_proto.py
+
+# OS
+.DS_Store
+Thumbs.db
