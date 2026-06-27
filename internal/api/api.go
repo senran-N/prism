@@ -9,6 +9,7 @@ import (
 
 	"github.com/senran-N/prism/internal/account"
 	"github.com/senran-N/prism/internal/config"
+	"github.com/senran-N/prism/internal/db"
 	"github.com/senran-N/prism/internal/scheduler"
 )
 
@@ -46,6 +47,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/pool/accounts", s.handlePoolAccounts)
 	s.mux.HandleFunc("POST /api/tasks", s.handleCreateTask)
 	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.handleTaskStatus)
+	s.mux.HandleFunc("GET /api/me", s.handleMe)
+	s.mux.HandleFunc("GET /api/tasks/history", s.handleTaskHistory)
 	s.mux.HandleFunc("GET /api/github/login", s.handleGitHubLogin)
 	s.mux.HandleFunc("GET /api/github/callback", s.handleGitHubCallback)
 	s.mux.HandleFunc("POST /api/github/select-repo", s.handleSelectRepo)
@@ -185,6 +188,41 @@ func (s *Server) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeError(w, 404, "task not found")
+}
+
+// GET /api/me
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	user := s.getSessionUser(r)
+	if user == nil {
+		writeJSON(w, map[string]any{"logged_in": false})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"logged_in":     true,
+		"id":            user.ID,
+		"github_login":  user.GitHubLogin,
+		"avatar_url":    user.AvatarURL,
+		"selected_repo": user.SelectedRepo,
+	})
+}
+
+// GET /api/tasks/history
+func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
+	user := s.getSessionUser(r)
+	if user == nil {
+		writeError(w, 401, "not logged in")
+		return
+	}
+	if db.DB == nil {
+		writeJSON(w, []any{})
+		return
+	}
+	tasks, err := db.ListTasksByUser(user.ID, 50)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, tasks)
 }
 
 // CORS middleware for development

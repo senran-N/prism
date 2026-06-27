@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/senran-N/prism/internal/db"
 )
 
 // GET /api/github/login — redirect user to GitHub OAuth
@@ -51,7 +53,18 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[oauth] get repos error: %v", err)
 	}
 
-	// Store in server state
+	// Persist user to database
+	if db.DB != nil {
+		dbUser, err := db.UpsertUser(user.ID, user.Login, user.AvatarURL, token)
+		if err != nil {
+			log.Printf("[oauth] db upsert error: %v", err)
+		} else {
+			s.setSession(w, dbUser.ID)
+			log.Printf("[oauth] user saved: id=%d login=%s", dbUser.ID, dbUser.GitHubLogin)
+		}
+	}
+
+	// Store in server state (fallback for no-DB mode)
 	s.mu.Lock()
 	s.ghToken = token
 	s.ghUserName = user.Login
@@ -60,7 +73,6 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[oauth] GitHub connected: %s (%d repos)", user.Login, len(repos))
 
-	// Redirect to frontend with success
 	http.Redirect(w, r, s.cfg.BaseURL+"/?github=connected", http.StatusFound)
 }
 
@@ -162,6 +174,7 @@ func exchangeGitHubCode(clientID, clientSecret, code string) (string, error) {
 }
 
 type GitHubUser struct {
+	ID        int64  `json:"id"`
 	Login     string `json:"login"`
 	AvatarURL string `json:"avatar_url"`
 }

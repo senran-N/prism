@@ -3,30 +3,42 @@ package config
 import "os"
 
 type Config struct {
-	Addr           string
-	YYDSAPIKey     string
-	GitHubUser     string // service account for SC binding
-	GitHubPass     string
-	GitHubTOTP     string
-	RepoID         string
+	Addr        string
+	DatabaseURL string
+	BaseURL     string
 
-	// GitHub OAuth App (for user-facing auth)
+	// Session
+	SessionSecret string
+
+	// GitHub OAuth App (user-facing)
 	GitHubClientID     string
 	GitHubClientSecret string
-	BaseURL            string // e.g. http://localhost:3001
+
+	// GitHub Service Account (SC binding)
+	GitHubUser string
+	GitHubPass string
+	GitHubTOTP string
+
+	// YYDS Mail
+	YYDSAPIKey string
+
+	// Default repo (optional, overridden by user selection)
+	RepoID string
 }
 
 func Load() Config {
 	return Config{
 		Addr:               envOr("PRISM_ADDR", ":8080"),
-		YYDSAPIKey:         envOr("YYDS_API_KEY", ""),
+		DatabaseURL:        envOr("DATABASE_URL", "postgres://prism:prism@localhost:5432/prism?sslmode=disable"),
+		BaseURL:            envOr("BASE_URL", "http://localhost:3001"),
+		SessionSecret:      envOr("SESSION_SECRET", "prism-dev-secret-change-me"),
+		GitHubClientID:     envOr("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret: envOr("GITHUB_CLIENT_SECRET", ""),
 		GitHubUser:         envOr("GITHUB_USER", ""),
 		GitHubPass:         envOr("GITHUB_PASS", ""),
 		GitHubTOTP:         envOr("GITHUB_TOTP", ""),
+		YYDSAPIKey:         envOr("YYDS_API_KEY", ""),
 		RepoID:             envOr("REPO_ID", ""),
-		GitHubClientID:     envOr("GITHUB_CLIENT_ID", ""),
-		GitHubClientSecret: envOr("GITHUB_CLIENT_SECRET", ""),
-		BaseURL:            envOr("BASE_URL", "http://localhost:3001"),
 	}
 }
 
