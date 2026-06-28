@@ -5,7 +5,7 @@ package api
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -68,7 +68,7 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 	// Sign the request
 	sign := signCreditParams(params, s.cfg.CreditClientSecret)
 	params.Set("sign", sign)
-	params.Set("sign_type", "SHA256")
+	params.Set("sign_type", "MD5")
 
 	payURL := creditSubmit + "?" + params.Encode()
 
@@ -187,6 +187,6 @@ func signCreditParams(params url.Values, secret string) string {
 	}
 	str := strings.Join(parts, "&") + secret
 
-	hash := sha256.Sum256([]byte(str))
+	hash := md5.Sum([]byte(str))
 	return hex.EncodeToString(hash[:])
 }
