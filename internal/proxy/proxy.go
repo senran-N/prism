@@ -32,12 +32,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find an account that has a valid SC client
+	// Extract ticket ID from path
+	parts := strings.SplitN(strings.TrimPrefix(targetPath, "/tickets/"), "/", 2)
+	ticketID := parts[0]
+
+	// Find the account that created this ticket
 	var client *http.Client
-	for _, acct := range h.pool.ListAll() {
-		if acct.Client != nil && acct.Client.HTTPClient() != nil {
-			client = acct.Client.HTTPClient()
-			break
+	if acct := h.pool.GetTicketAccount(ticketID); acct != nil && acct.Client != nil {
+		client = acct.Client.HTTPClient()
+	}
+	// Fallback: try any account
+	if client == nil {
+		for _, acct := range h.pool.ListAll() {
+			if acct.Client != nil && acct.Client.HTTPClient() != nil {
+				client = acct.Client.HTTPClient()
+				break
+			}
 		}
 	}
 	if client == nil {

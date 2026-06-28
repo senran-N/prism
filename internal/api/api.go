@@ -217,6 +217,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	s.scheduler.ReleaseAccount(acct.ID)
 
+	// Map ticket to account so proxy can use the right session
+	s.pool.MapTicket(ticketID, acct.ID)
+
 	writeJSON(w, map[string]string{
 		"task_id":    ticketID,
 		"account_id": acct.ID,

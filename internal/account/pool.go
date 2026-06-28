@@ -43,14 +43,32 @@ type Pool struct {
 	mu       sync.RWMutex
 	accounts map[string]*Account
 	active   string
-	ready    chan *Account // buffered channel for fast acquire
+	ready    chan *Account
+	tickets  map[string]string // ticketID → accountID
 }
 
 func NewPool() *Pool {
 	return &Pool{
 		accounts: make(map[string]*Account),
 		ready:    make(chan *Account, 50),
+		tickets:  make(map[string]string),
 	}
+}
+
+func (p *Pool) MapTicket(ticketID, accountID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tickets[ticketID] = accountID
+}
+
+func (p *Pool) GetTicketAccount(ticketID string) *Account {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	acctID, ok := p.tickets[ticketID]
+	if !ok {
+		return nil
+	}
+	return p.accounts[acctID]
 }
 
 // Add registers an account in the pool. If ready, also enqueue.

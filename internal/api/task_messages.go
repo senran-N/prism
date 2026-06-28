@@ -12,24 +12,23 @@ import (
 func (s *Server) handleTaskMessages(w http.ResponseWriter, r *http.Request) {
 	ticketID := r.PathValue("id")
 
-	for _, acct := range s.pool.ListAll() {
-		if acct.Client == nil {
-			continue
-		}
-		impl, err := acct.Client.GetImplementation(ticketID)
-		if err != nil || impl == nil {
-			continue
-		}
-
-		writeJSON(w, map[string]any{
-			"ticket_id": ticketID,
-			"status":    impl.Status,
-			"messages":  impl.Messages,
-		})
+	acct := s.pool.GetTicketAccount(ticketID)
+	if acct == nil || acct.Client == nil {
+		writeError(w, 404, "task not found")
 		return
 	}
 
-	writeError(w, 404, "task not found or no messages yet")
+	impl, err := acct.Client.GetImplementation(ticketID)
+	if err != nil || impl == nil {
+		writeError(w, 404, "no messages yet: "+err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"ticket_id": ticketID,
+		"status":    impl.Status,
+		"messages":  impl.Messages,
+	})
 }
 
 // POST /api/tasks/{id}/message — send follow-up to agent
