@@ -91,7 +91,7 @@ func UpsertLinuxDoUser(linuxdoID int64, username, name, avatarTemplate string, t
 		ON CONFLICT (linuxdo_id) DO UPDATE SET
 			linuxdo_username = EXCLUDED.linuxdo_username,
 			linuxdo_name = EXCLUDED.linuxdo_name,
-			avatar_url = EXCLUDED.avatar_url,
+			avatar_url = CASE WHEN users.github_id IS NOT NULL AND users.avatar_url != '' THEN users.avatar_url ELSE EXCLUDED.avatar_url END,
 			trust_level = EXCLUDED.trust_level,
 			updated_at = now()
 		RETURNING id, COALESCE(github_id, 0), COALESCE(github_login, ''), COALESCE(avatar_url, ''),

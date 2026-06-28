@@ -98,24 +98,30 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 // POST /api/github/select-repo — user picks a repo, we add service account as collaborator
 func (s *Server) handleSelectRepo(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Repo string `json:"repo"` // "owner/name"
+		Repo string `json:"repo"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Repo == "" {
 		writeError(w, 400, "repo is required (owner/name format)")
 		return
 	}
 
-	s.mu.Lock()
-	token := s.ghToken
-	s.mu.Unlock()
-
+	// Get token from current user's DB record
+	user := s.getSessionUser(r)
+	token := ""
+	if user != nil && user.GitHubToken != "" {
+		token = user.GitHubToken
+	}
 	if token == "" {
-		writeError(w, 401, "GitHub not connected")
+		s.mu.Lock()
+		token = s.ghToken
+		s.mu.Unlock()
+	}
+	if token == "" {
+		writeError(w, 401, "GitHub not connected. Please connect GitHub first.")
 		return
 	}
 
-	// Add service account as collaborator
-	serviceAccount := s.cfg.GitHubUser // e.g. "gillstelab"
+	serviceAccount := s.cfg.GitHubUser
 	log.Printf("[oauth] adding %s as collaborator to %s", serviceAccount, req.Repo)
 	err := addCollaborator(token, req.Repo, serviceAccount)
 	if err != nil {
@@ -124,25 +130,46 @@ func (s *Server) handleSelectRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store selected repo
+	// Store in DB
+	if user != nil && db.DB != nil {
+		db.UpdateUserRepo(user.ID, req.Repo)
+	}
+
 	s.mu.Lock()
 	s.selectedRepo = req.Repo
 	s.mu.Unlock()
 
 	log.Printf("[oauth] repo selected: %s, collaborator added: %s", req.Repo, serviceAccount)
-
-	writeJSON(w, map[string]any{
-		"repo":         req.Repo,
-		"collaborator": serviceAccount,
-		"status":       "ready",
-	})
+	writeJSON(w, map[string]any{"repo": req.Repo, "collaborator": serviceAccount, "status": "ready"})
 }
 
-// GET /api/github/status
+// GET /api/github/status — read from DB, not just memory
 func (s *Server) handleGitHubOAuthStatus(w http.ResponseWriter, r *http.Request) {
+	user := s.getSessionUser(r)
+
+	// DB-backed state
+	if user != nil && user.GitHubLogin != "" {
+		repos := s.ghRepos
+		if repos == nil && user.GitHubToken != "" {
+			repos, _ = getGitHubRepos(user.GitHubToken)
+			if repos != nil {
+				s.mu.Lock()
+				s.ghRepos = repos
+				s.mu.Unlock()
+			}
+		}
+		writeJSON(w, map[string]any{
+			"connected":    true,
+			"user":         user.GitHubLogin,
+			"repos":        repos,
+			"selectedRepo": user.SelectedRepo,
+		})
+		return
+	}
+
+	// Fallback to memory state
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	writeJSON(w, map[string]any{
 		"connected":    s.ghToken != "",
 		"user":         s.ghUserName,
@@ -153,6 +180,11 @@ func (s *Server) handleGitHubOAuthStatus(w http.ResponseWriter, r *http.Request)
 
 // POST /api/github/disconnect
 func (s *Server) handleGitHubOAuthDisconnect(w http.ResponseWriter, r *http.Request) {
+	user := s.getSessionUser(r)
+	if user != nil && db.DB != nil {
+		db.DB.Exec("UPDATE users SET github_id = NULL, github_login = '', github_token = '', selected_repo = '', updated_at = now() WHERE id = $1", user.ID)
+	}
+
 	s.mu.Lock()
 	s.ghToken = ""
 	s.ghUserName = ""
