@@ -15,13 +15,15 @@ import (
 	"github.com/senran-N/prism/internal/scproto"
 )
 
+const EstimatedTaskCost = 2.0 // conservative per-task credit estimate
+
 type Config struct {
-	YYDSAPIKey      string
-	GitHubUser      string
-	GitHubPass      string
-	GitHubTOTP      string
-	RepoID          string
-	InitialCredits  float64 // default 20.0
+	YYDSAPIKey     string
+	GitHubUser     string
+	GitHubPass     string
+	GitHubTOTP     string
+	RepoID         string
+	InitialCredits float64 // default 20.0
 }
 
 type Scheduler struct {
@@ -40,10 +42,7 @@ func New(pool *account.Pool, cfg Config) *Scheduler {
 // AcquireAccount returns a ready account. If none available, performs
 // automatic rotation. userID is used for billing (0 = system/free).
 func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
-	// Fast path: try to acquire without lock contention
 	if a := s.pool.Acquire(); a != nil {
-		// Trigger background warm if pool is getting low
-		go s.warmPool()
 		return a, nil
 	}
 
@@ -75,24 +74,21 @@ func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
 }
 
 func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
-	// 1. Find an account with GitHub bound and unbind it
 	old := s.pool.FindExhaustedWithGitHub()
 	if old != nil && old.Client != nil {
-		log.Printf("[scheduler] unbinding GitHub from %s", old.Email)
+		log.Printf("[scheduler] unbinding GitHub from exhausted %s", old.Email)
 		if err := old.Client.DisconnectGitHub(); err != nil {
 			log.Printf("[scheduler] unbind warning: %v", err)
 		}
 		old.GitHubBound = false
 	}
 
-	// 2. Login GitHub
 	log.Println("[scheduler] logging into GitHub...")
 	ghClient, err := github.Login(s.cfg.GitHubUser, s.cfg.GitHubPass, s.cfg.GitHubTOTP)
 	if err != nil {
 		return nil, fmt.Errorf("github login: %w", err)
 	}
 
-	// 3. Create temp email
 	log.Println("[scheduler] creating temp email...")
 	prefix := fmt.Sprintf("prism-%d", time.Now().Unix())
 	emailAddr, _, err := mail.CreateTempEmail(s.cfg.YYDSAPIKey, prefix)
@@ -100,11 +96,9 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		return nil, fmt.Errorf("create email: %w", err)
 	}
 
-	// 4. Register SC account (use user fingerprint if available)
 	password := fmt.Sprintf("Prism#%06dxPass!", time.Now().Unix()%1000000)
 	sc := scproto.NewClient()
 
-	// Apply user's browser fingerprint to reduce risk detection
 	if userID > 0 {
 		fp, err := db.GetLatestFingerprint(userID)
 		if err == nil && fp != nil && fp.UserAgent != "" {
@@ -117,20 +111,17 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		return nil, fmt.Errorf("sc register: %w", err)
 	}
 
-	// 5. Connect GitHub OAuth
 	log.Println("[scheduler] connecting GitHub OAuth...")
 	if err := sc.ConnectGitHub(ghClient); err != nil {
 		return nil, fmt.Errorf("sc oauth: %w", err)
 	}
 
-	// 6. Create project
 	log.Println("[scheduler] creating project...")
 	projectID, err := sc.CreateProject(s.cfg.RepoID)
 	if err != nil {
 		return nil, fmt.Errorf("sc project: %w", err)
 	}
 
-	// 7. Complete environment setup
 	log.Println("[scheduler] completing environment setup...")
 	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
 		log.Printf("[scheduler] env setup warning: %v", err)
@@ -139,7 +130,6 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		log.Printf("[scheduler] env wait warning: %v", err)
 	}
 
-	// 8. Add to pool
 	newAcct := &account.Account{
 		ID:          account.GenerateAccountID(),
 		Email:       emailAddr,
@@ -149,22 +139,23 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		ProjectID:   projectID,
 		RepoID:      s.cfg.RepoID,
 		Credits:     s.cfg.InitialCredits,
-		Status:      account.StatusReady,
+		Status:      account.StatusActive,
 		GitHubBound: true,
 		CreatedAt:   time.Now(),
+		LastUsedAt:  time.Now(),
 		Client:      sc,
 	}
 	s.pool.Add(newAcct)
 
 	log.Printf("[scheduler] new account ready: %s ($%.2f)", emailAddr, newAcct.Credits)
-
-	newAcct.Status = account.StatusActive
-	newAcct.LastUsedAt = time.Now()
 	return newAcct, nil
 }
 
-// ReleaseAccount returns the account to the pool.
-func (s *Scheduler) ReleaseAccount(id string) {
+// ReleaseAccount returns the account to the pool and deducts estimated cost.
+func (s *Scheduler) ReleaseAccount(id string, deductCredits bool) {
+	if deductCredits {
+		s.pool.DeductCredits(id, EstimatedTaskCost)
+	}
 	s.pool.Release(id)
 }
 

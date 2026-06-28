@@ -13,44 +13,40 @@ import (
 type Status string
 
 const (
-	StatusReady      Status = "ready"       // logged in, GitHub connected, has credits
-	StatusActive     Status = "active"      // currently serving a task
-	StatusExhausted  Status = "exhausted"   // credits depleted
-	StatusError      Status = "error"       // login or setup failure
-	StatusRegistered Status = "registered"  // registered but not yet set up
+	StatusReady      Status = "ready"
+	StatusActive     Status = "active"
+	StatusExhausted  Status = "exhausted"
+	StatusError      Status = "error"
+	StatusRegistered Status = "registered"
 )
 
 // Account represents one Superconductor account in the pool.
 type Account struct {
-	ID          string    `json:"id"`
-	Email       string    `json:"email"`
-	Password    string    `json:"password"`
-	WorkspaceID string    `json:"workspace_id"`
-	UserID      string    `json:"user_id"`
-	ProjectID   string    `json:"project_id"`
-	RepoID      string    `json:"repo_id"`
-	Credits     float64   `json:"credits"` // estimated remaining credits in USD
-	Status      Status    `json:"status"`
-	GitHubBound bool      `json:"github_bound"`
-	CreatedAt   time.Time `json:"created_at"`
-	LastUsedAt  time.Time `json:"last_used_at"`
+	ID          string          `json:"id"`
+	Email       string          `json:"email"`
+	Password    string          `json:"password"`
+	WorkspaceID string          `json:"workspace_id"`
+	UserID      string          `json:"user_id"`
+	ProjectID   string          `json:"project_id"`
+	RepoID      string          `json:"repo_id"`
+	Credits     float64         `json:"credits"`
+	Status      Status          `json:"status"`
+	GitHubBound bool            `json:"github_bound"`
+	CreatedAt   time.Time       `json:"created_at"`
+	LastUsedAt  time.Time       `json:"last_used_at"`
 	Client      *scproto.Client `json:"-"`
 }
 
-// Pool manages a set of SC accounts and handles automatic rotation.
-// Uses channel-based ready queue for lock-free acquisition.
+// Pool manages a set of SC accounts.
 type Pool struct {
 	mu       sync.RWMutex
 	accounts map[string]*Account
-	active   string
-	ready    chan *Account
 	tickets  map[string]string // ticketID → accountID
 }
 
 func NewPool() *Pool {
 	return &Pool{
 		accounts: make(map[string]*Account),
-		ready:    make(chan *Account, 50),
 		tickets:  make(map[string]string),
 	}
 }
@@ -82,21 +78,12 @@ func (p *Pool) GetProjectAccount(projectID string) *Account {
 	return nil
 }
 
-// Add registers an account in the pool. If ready, also enqueue.
 func (p *Pool) Add(a *Account) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.accounts[a.ID] = a
-	p.mu.Unlock()
-
-	if a.Status == StatusReady && a.Credits > 0.50 {
-		select {
-		case p.ready <- a:
-		default: // channel full, that's ok
-		}
-	}
 }
 
-// Get returns an account by ID.
 func (p *Pool) Get(id string) (*Account, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -104,49 +91,43 @@ func (p *Pool) Get(id string) (*Account, bool) {
 	return a, ok
 }
 
-// Acquire selects a ready account. Fast path via channel (no lock).
+// Acquire returns a ready account with remaining credits.
+// Prefers accounts with GitHub bound, falls back to any ready account.
 func (p *Pool) Acquire() *Account {
-	// Fast path: try channel (lock-free)
-	select {
-	case a := <-p.ready:
-		if a.Status == StatusReady && a.Credits > 0.50 {
-			p.mu.Lock()
-			a.Status = StatusActive
-			a.LastUsedAt = time.Now()
-			p.active = a.ID
-			p.mu.Unlock()
-			return a
-		}
-		// Account no longer valid, fall through
-	default:
-	}
-
-	// Slow path: scan map
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Prefer accounts with GitHub (can create PRs)
+	var fallback *Account
 	for _, a := range p.accounts {
-		if a.Status == StatusReady && a.Credits > 0.50 && a.GitHubBound {
-			a.Status = StatusActive
-			a.LastUsedAt = time.Now()
-			p.active = a.ID
-			return a
+		if a.Status == StatusReady && a.Credits > 0.50 {
+			if a.GitHubBound {
+				a.Status = StatusActive
+				a.LastUsedAt = time.Now()
+				return a
+			}
+			if fallback == nil {
+				fallback = a
+			}
 		}
+	}
+	if fallback != nil {
+		fallback.Status = StatusActive
+		fallback.LastUsedAt = time.Now()
+		return fallback
 	}
 	return nil
 }
 
-// Release marks an account as ready again after task completion.
+// Release marks an account as ready again.
 func (p *Pool) Release(id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if a, ok := p.accounts[id]; ok {
-		if a.Status == StatusActive {
-			a.Status = StatusReady
-		}
+	if a, ok := p.accounts[id]; ok && a.Status == StatusActive {
+		a.Status = StatusReady
 	}
 }
 
-// MarkExhausted flags an account as having no remaining credits.
 func (p *Pool) MarkExhausted(id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -156,7 +137,7 @@ func (p *Pool) MarkExhausted(id string) {
 	}
 }
 
-// DeductCredits subtracts estimated cost from an account.
+// DeductCredits subtracts estimated cost. Marks exhausted when empty.
 func (p *Pool) DeductCredits(id string, amount float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -169,7 +150,6 @@ func (p *Pool) DeductCredits(id string, amount float64) {
 	}
 }
 
-// ListAll returns a snapshot of all accounts.
 func (p *Pool) ListAll() []*Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -180,12 +160,11 @@ func (p *Pool) ListAll() []*Account {
 	return result
 }
 
-// Stats returns pool-level statistics.
 type PoolStats struct {
-	Total      int     `json:"total"`
-	Ready      int     `json:"ready"`
-	Active     int     `json:"active"`
-	Exhausted  int     `json:"exhausted"`
+	Total        int     `json:"total"`
+	Ready        int     `json:"ready"`
+	Active       int     `json:"active"`
+	Exhausted    int     `json:"exhausted"`
 	TotalCredits float64 `json:"total_credits"`
 }
 
@@ -208,7 +187,6 @@ func (p *Pool) Stats() PoolStats {
 	return s
 }
 
-// NeedsRotation returns true if no ready accounts are available.
 func (p *Pool) NeedsRotation() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -226,7 +204,7 @@ func (p *Pool) FindExhaustedWithGitHub() *Account {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, a := range p.accounts {
-		if a.GitHubBound {
+		if a.Status == StatusExhausted && a.GitHubBound {
 			return a
 		}
 	}

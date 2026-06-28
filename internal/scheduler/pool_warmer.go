@@ -5,7 +5,6 @@ package scheduler
 import (
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/senran-N/prism/internal/account"
@@ -15,16 +14,14 @@ import (
 )
 
 var (
-	MinReadyAccounts  = 5                // keep at least N accounts ready
-	WarmCheckInterval = 30 * time.Second // check every 30s
-	MaxConcurrentWarm = 3                // register up to N accounts in parallel
-	EnvSetupWait      = 25 * time.Second
+	MinReadyAccounts  = 1                // with one GitHub account, only 1 can be active
+	WarmCheckInterval = 30 * time.Second
+	MaxConcurrentWarm = 1                // serialize — one GitHub account means one at a time
 )
 
 // StartPoolWarmer runs a background loop that keeps the pool warm.
 func (s *Scheduler) StartPoolWarmer() {
 	go func() {
-		// Initial warm-up after 5s startup delay
 		time.Sleep(5 * time.Second)
 		s.warmPool()
 
@@ -43,32 +40,26 @@ func (s *Scheduler) warmPool() {
 	if needed <= 0 {
 		return
 	}
-	if needed > MaxConcurrentWarm {
-		needed = MaxConcurrentWarm
-	}
 
-	log.Printf("[warmer] pool needs %d accounts (ready=%d)", needed, stats.Ready)
+	log.Printf("[warmer] pool needs %d accounts (ready=%d, active=%d, exhausted=%d)",
+		needed, stats.Ready, stats.Active, stats.Exhausted)
 
-	var wg sync.WaitGroup
-	for i := 0; i < needed; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			if err := s.registerOneAccount(); err != nil {
-				log.Printf("[warmer] account %d failed: %v", idx, err)
-			}
-		}(i)
+	for i := 0; i < needed && i < MaxConcurrentWarm; i++ {
+		if err := s.registerOneAccount(); err != nil {
+			log.Printf("[warmer] account creation failed: %v", err)
+		}
 	}
-	wg.Wait()
 
 	newStats := s.pool.Stats()
-	log.Printf("[warmer] done: ready=%d total=%d", newStats.Ready, newStats.Total)
+	log.Printf("[warmer] done: ready=%d total=%d credits=$%.2f",
+		newStats.Ready, newStats.Total, newStats.TotalCredits)
 }
 
 func (s *Scheduler) registerOneAccount() error {
-	// Find account with GitHub to unbind if needed
+	// Only take GitHub from exhausted accounts
 	old := s.pool.FindExhaustedWithGitHub()
 	if old != nil && old.Client != nil {
+		log.Printf("[warmer] unbinding GitHub from exhausted %s", old.Email)
 		if err := old.Client.DisconnectGitHub(); err != nil {
 			log.Printf("[warmer] unbind warning: %v", err)
 		}
@@ -123,6 +114,6 @@ func (s *Scheduler) registerOneAccount() error {
 		Client:      sc,
 	}
 	s.pool.Add(newAcct)
-	log.Printf("[warmer] account ready: %s", emailAddr)
+	log.Printf("[warmer] account ready: %s ($%.2f)", emailAddr, newAcct.Credits)
 	return nil
 }
