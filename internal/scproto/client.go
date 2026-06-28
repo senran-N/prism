@@ -225,7 +225,16 @@ func (c *Client) Register(email, password, name string) error {
 
 	m := reWorkspace.FindStringSubmatch(finalURL)
 	if m == nil {
-		return fmt.Errorf("registration failed, landed on: %s", finalURL)
+		// Extract SC error message from the response body
+		errMsg := ""
+		errRe := regexp.MustCompile(`(?:alert|error|flash)[^>]*>([^<]+)`)
+		if em := errRe.FindStringSubmatch(body); em != nil {
+			errMsg = strings.TrimSpace(em[1])
+		}
+		if errMsg != "" {
+			return fmt.Errorf("registration rejected: %s (email=%s)", errMsg, email)
+		}
+		return fmt.Errorf("registration failed, landed on: %s (email=%s)", finalURL, email)
 	}
 
 	c.Email = email
