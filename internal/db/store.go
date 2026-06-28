@@ -105,6 +105,14 @@ func UpsertLinuxDoUser(linuxdoID int64, username, name, avatarTemplate string, t
 	return u, err
 }
 
+func LinkGitHub(userID, githubID int64, login, avatarURL, token string) error {
+	_, err := DB.Exec(`
+		UPDATE users SET github_id = $1, github_login = $2, avatar_url = $3, github_token = $4, updated_at = now()
+		WHERE id = $5
+	`, githubID, login, avatarURL, token, userID)
+	return err
+}
+
 func UpdateUserRepo(id int64, repo string) error {
 	_, err := DB.Exec(`UPDATE users SET selected_repo = $1, updated_at = now() WHERE id = $2`, repo, id)
 	return err

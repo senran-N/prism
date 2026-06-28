@@ -42,7 +42,11 @@ type Config struct {
 	// YYDS Mail
 	YYDSAPIKey string
 
-	// Default repo (optional, overridden by user selection)
+	// Pool sizing
+	PoolMinReady   int // minimum ready accounts (default 5)
+	PoolMaxWarm    int // max concurrent registrations (default 3)
+
+	// Default repo
 	RepoID string
 }
 
@@ -67,6 +71,8 @@ func Load() Config {
 		GitHubPass:         envOr("GITHUB_PASS", ""),
 		GitHubTOTP:         envOr("GITHUB_TOTP", ""),
 		YYDSAPIKey:         envOr("YYDS_API_KEY", ""),
+		PoolMinReady:       int(envOrFloat("POOL_MIN_READY", 5)),
+		PoolMaxWarm:        int(envOrFloat("POOL_MAX_WARM", 3)),
 		RepoID:             envOr("REPO_ID", ""),
 	}
 }

@@ -38,7 +38,11 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     </div>
   );
 
-  if (!user?.logged_in) return <LoginPage />;
+  if (!user?.logged_in) {
+    // Show URL errors from OAuth callbacks
+    const urlError = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("error") : null;
+    return <LoginPage urlError={urlError} />;
+  }
 
   if (user?.is_banned) return (
     <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center">
@@ -58,9 +62,17 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function LoginPage() {
+function LoginPage({ urlError }: { urlError?: string | null }) {
   const { locale } = useLocale();
   const isZh = locale === "zh";
+
+  const errorMessages: Record<string, string> = {
+    state_expired: isZh ? "登录超时，请重试" : "Login expired, please try again",
+    token_exchange: isZh ? "认证失败，请重试" : "Authentication failed, please retry",
+    user_fetch: isZh ? "获取用户信息失败" : "Failed to get user info",
+    github_link_failed: isZh ? "GitHub 关联失败" : "GitHub linking failed",
+    github_save_failed: isZh ? "GitHub 保存失败" : "GitHub save failed",
+  };
 
   return (
     <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center">
@@ -78,6 +90,12 @@ function LoginPage() {
         <p className="text-[14px] text-[#697386] mb-6">
           {isZh ? "AI 智能体平台 — 连接仓库，选择模型，发布代码" : "AI Agent Platform — connect repos, pick models, ship code"}
         </p>
+
+        {urlError && (
+          <div className="bg-[#fde8ed] border border-[#f5c6cb] rounded-lg px-3 py-2 text-[13px] text-[#df1b41] mb-3">
+            {errorMessages[urlError] || urlError}
+          </div>
+        )}
 
         {/* LinuxDo Login */}
         <a href="/api/linuxdo/login"

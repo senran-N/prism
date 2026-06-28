@@ -14,11 +14,11 @@ import (
 	"github.com/senran-N/prism/internal/scproto"
 )
 
-const (
-	minReadyAccounts = 2           // keep at least N accounts ready
-	warmCheckInterval = 60 * time.Second
-	maxConcurrentWarm = 2          // register up to N accounts in parallel
-	envSetupWait      = 25 * time.Second // reduced from 30s
+var (
+	MinReadyAccounts  = 5                // keep at least N accounts ready
+	WarmCheckInterval = 30 * time.Second // check every 30s
+	MaxConcurrentWarm = 3                // register up to N accounts in parallel
+	EnvSetupWait      = 25 * time.Second
 )
 
 // StartPoolWarmer runs a background loop that keeps the pool warm.
@@ -28,23 +28,23 @@ func (s *Scheduler) StartPoolWarmer() {
 		time.Sleep(5 * time.Second)
 		s.warmPool()
 
-		ticker := time.NewTicker(warmCheckInterval)
+		ticker := time.NewTicker(WarmCheckInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			s.warmPool()
 		}
 	}()
-	log.Printf("[warmer] started: min_ready=%d check_interval=%s", minReadyAccounts, warmCheckInterval)
+	log.Printf("[warmer] started: min_ready=%d check_interval=%s", MinReadyAccounts, WarmCheckInterval)
 }
 
 func (s *Scheduler) warmPool() {
 	stats := s.pool.Stats()
-	needed := minReadyAccounts - stats.Ready
+	needed := MinReadyAccounts - stats.Ready
 	if needed <= 0 {
 		return
 	}
-	if needed > maxConcurrentWarm {
-		needed = maxConcurrentWarm
+	if needed > MaxConcurrentWarm {
+		needed = MaxConcurrentWarm
 	}
 
 	log.Printf("[warmer] pool needs %d accounts (ready=%d)", needed, stats.Ready)
@@ -101,7 +101,7 @@ func (s *Scheduler) registerOneAccount() error {
 		return err
 	}
 
-	time.Sleep(envSetupWait)
+	time.Sleep(EnvSetupWait)
 
 	newAcct := &account.Account{
 		ID:          account.GenerateAccountID(),

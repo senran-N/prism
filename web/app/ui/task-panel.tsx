@@ -35,11 +35,12 @@ const MODEL_NAMES: Record<string, string> = {
 interface Props { model: string; activeTask: string | null; onTaskCreated: (task: Task) => void; }
 
 export default function TaskPanel({ model, activeTask, onTaskCreated }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [viewUrl, setViewUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { if (!activeTask) { setViewUrl(null); setStatus(null); } }, [activeTask]);
@@ -57,7 +58,11 @@ export default function TaskPanel({ model, activeTask, onTaskCreated }: Props) {
     setLoading(true);
     try {
       const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: input.trim(), model }) });
-      if (!res.ok) { const err = await res.json(); alert(err.error || "Failed"); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        setError(err.error || `Request failed (${res.status})`);
+        return;
+      }
       const data = await res.json();
       onTaskCreated({ id: data.task_id, description: input.trim(), model, modelName: MODEL_NAMES[model] || model, status: "created", createdAt: new Date().toISOString(), viewUrl: data.view_url });
       setViewUrl(data.view_url); setStatus("Running"); setInput("");
@@ -84,6 +89,15 @@ export default function TaskPanel({ model, activeTask, onTaskCreated }: Props) {
             </div>
           </div>
         )}
+        {error && (
+          <div className="absolute top-3 left-3 right-3 bg-[#fde8ed] border border-[#f5c6cb] rounded-lg px-4 py-3 text-[13px] text-[#df1b41] flex justify-between items-start" style={{ zIndex: 10 }}>
+            <div>
+              <strong>{locale === "zh" ? "错误" : "Error"}:</strong> {error}
+            </div>
+            <button onClick={() => setError(null)} className="text-[#df1b41] hover:text-[#ff4d6a] ml-3 shrink-0">✕</button>
+          </div>
+        )}
+
         {status && (
           <div className="absolute top-3 right-3 flex items-center gap-2 bg-white border border-[#e3e8ee] rounded-lg px-3 py-1.5 text-[13px] text-[#0a2540]" style={{ boxShadow: "var(--shadow-sm)" }}>
             <span className={`w-1.5 h-1.5 rounded-full ${status === "Running" ? "bg-[#635bff] animate-pulse" : status === "Waiting" ? "bg-[#f5a623]" : status === "Completed" ? "bg-[#0caf60]" : status === "Failed" ? "bg-[#df1b41]" : "bg-[#8792a2]"}`} />

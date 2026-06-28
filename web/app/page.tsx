@@ -13,7 +13,7 @@ export default function Home() {
 }
 
 function AuthenticatedApp() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { user } = useUser();
 
   const displayName = user?.linuxdo_name || user?.linuxdo_username || user?.github_login || "U";
@@ -39,13 +39,17 @@ function AuthenticatedApp() {
             {t("online")}
           </div>
           <LocaleSwitch />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 group relative">
             {avatarUrl ? (
               <img src={avatarUrl} className="w-7 h-7 rounded-full" alt="" />
             ) : (
               <div className="w-7 h-7 rounded-full bg-[#e3e8ee] flex items-center justify-center text-xs font-medium text-[#697386]">{initials}</div>
             )}
             <span className="text-[13px] text-[#0a2540] font-medium hidden sm:inline">{displayName}</span>
+            <button onClick={async () => { await fetch("/api/logout", { method: "POST" }); window.location.reload(); }}
+              className="text-[11px] text-[#df1b41] hover:text-[#ff4d6a] hidden group-hover:inline ml-1">
+              {locale === "zh" ? "退出" : "Logout"}
+            </button>
           </div>
         </div>
       </header>

@@ -59,18 +59,32 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[oauth] get repos error: %v", err)
 	}
 
-	// Persist user to database
+	// Link GitHub to existing logged-in user (don't create new user)
 	if db.DB != nil {
-		dbUser, err := db.UpsertUser(user.ID, user.Login, user.AvatarURL, token)
-		if err != nil {
-			log.Printf("[oauth] db upsert error: %v", err)
+		existingUser := s.getSessionUser(r)
+		if existingUser != nil {
+			// User is already logged in (via LinuxDo) — link GitHub to their account
+			err := db.LinkGitHub(existingUser.ID, user.ID, user.Login, user.AvatarURL, token)
+			if err != nil {
+				log.Printf("[oauth] link github error: %v", err)
+				http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_link_failed", http.StatusFound)
+				return
+			}
+			log.Printf("[oauth] linked GitHub %s to user %d (%s)", user.Login, existingUser.ID, existingUser.LinuxDoUsername)
 		} else {
+			// No existing session — create/update user from GitHub (standalone login)
+			dbUser, err := db.UpsertUser(user.ID, user.Login, user.AvatarURL, token)
+			if err != nil {
+				log.Printf("[oauth] db upsert error: %v", err)
+				http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_save_failed", http.StatusFound)
+				return
+			}
 			s.setSession(w, dbUser.ID)
-			log.Printf("[oauth] user saved: id=%d login=%s", dbUser.ID, dbUser.GitHubLogin)
+			log.Printf("[oauth] github login: id=%d login=%s", dbUser.ID, dbUser.GitHubLogin)
 		}
 	}
 
-	// Store in server state (fallback for no-DB mode)
+	// Store in server state
 	s.mu.Lock()
 	s.ghToken = token
 	s.ghUserName = user.Login
@@ -78,7 +92,6 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	log.Printf("[oauth] GitHub connected: %s (%d repos)", user.Login, len(repos))
-
 	http.Redirect(w, r, s.cfg.BaseURL+"/?github=connected", http.StatusFound)
 }
 

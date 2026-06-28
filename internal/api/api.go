@@ -47,6 +47,7 @@ func (s *Server) routes() {
 	// Public
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/me", s.handleMe)
+	s.mux.HandleFunc("POST /api/logout", s.handleUserLogout)
 
 	// OAuth (rate limited)
 	s.mux.HandleFunc("GET /api/linuxdo/login", s.rateLimit(10, time.Minute, s.handleLinuxDoLogin))
@@ -238,6 +239,12 @@ func (s *Server) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeError(w, 404, "task not found")
+}
+
+// POST /api/logout
+func (s *Server) handleUserLogout(w http.ResponseWriter, r *http.Request) {
+	s.clearSession(w)
+	writeJSON(w, map[string]bool{"logged_out": true})
 }
 
 // GET /api/me

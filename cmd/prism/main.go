@@ -48,7 +48,13 @@ func main() {
 		RepoID:     cfg.RepoID,
 	})
 
-	// Start background pool warmer
+	// Configure and start pool warmer
+	if cfg.PoolMinReady > 0 {
+		scheduler.MinReadyAccounts = cfg.PoolMinReady
+	}
+	if cfg.PoolMaxWarm > 0 {
+		scheduler.MaxConcurrentWarm = cfg.PoolMaxWarm
+	}
 	sched.StartPoolWarmer()
 
 	apiServer := api.New(sched, pool, cfg)
