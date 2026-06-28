@@ -38,7 +38,9 @@ func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validateOAuthState(state) {
-		http.Error(w, "invalid state parameter", 400)
+		log.Printf("[linuxdo] invalid state: %s (may have expired or server restarted)", state)
+		// Redirect to login page instead of showing error
+		http.Redirect(w, r, s.cfg.BaseURL+"/?error=state_expired", http.StatusFound)
 		return
 	}
 
@@ -47,7 +49,7 @@ func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	token, err := exchangeLinuxDoCode(s.cfg.LinuxDoClientID, s.cfg.LinuxDoClientSecret, code, redirectURI)
 	if err != nil {
 		log.Printf("[linuxdo] token exchange error: %v", err)
-		http.Error(w, "token exchange failed", 500)
+		http.Redirect(w, r, s.cfg.BaseURL+"/?error=token_exchange", http.StatusFound)
 		return
 	}
 
@@ -55,7 +57,7 @@ func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	user, err := getLinuxDoUser(token)
 	if err != nil {
 		log.Printf("[linuxdo] get user error: %v", err)
-		http.Error(w, "failed to get user info", 500)
+		http.Redirect(w, r, s.cfg.BaseURL+"/?error=user_fetch", http.StatusFound)
 		return
 	}
 

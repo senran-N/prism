@@ -18,11 +18,20 @@ func main() {
 	if err := db.Connect(cfg.DatabaseURL); err != nil {
 		log.Printf("[warn] database not available: %v (running without persistence)", err)
 	} else {
-		schema, err := os.ReadFile("migrations/001_init.sql")
-		if err != nil {
-			log.Printf("[warn] migration file not found: %v", err)
-		} else if err := db.Migrate(string(schema)); err != nil {
-			log.Printf("[warn] migration error: %v", err)
+		migrations := []string{
+			"migrations/001_init.sql",
+			"migrations/002_user_ban.sql",
+			"migrations/003_credits_and_codes.sql",
+		}
+		for _, f := range migrations {
+			schema, err := os.ReadFile(f)
+			if err != nil {
+				log.Printf("[warn] migration %s not found: %v", f, err)
+				continue
+			}
+			if err := db.Migrate(string(schema)); err != nil {
+				log.Printf("[warn] migration %s error: %v", f, err)
+			}
 		}
 	}
 
