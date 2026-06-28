@@ -63,17 +63,13 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 	params["sign"] = epaySign(params, s.cfg.CreditClientSecret)
 	params["sign_type"] = "MD5"
 
-	q := url.Values{}
-	for k, v := range params {
-		q.Set(k, v)
-	}
-	payURL := creditBase + "/pay/submit.php?" + q.Encode()
-
 	log.Printf("[credit] order created: %s amount=%.2f user=%d", orderNo, req.Amount, user.ID)
 
-	writeJSON(w, map[string]string{
-		"order_no": orderNo,
-		"pay_url":  payURL,
+	// Return form data for POST submission (avoids Cloudflare GET blocking)
+	writeJSON(w, map[string]any{
+		"order_no":   orderNo,
+		"action_url": creditBase + "/pay/submit.php",
+		"params":     params,
 	})
 }
 

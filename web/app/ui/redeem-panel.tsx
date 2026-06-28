@@ -117,9 +117,23 @@ export default function RedeemPanel() {
             });
             if (res.ok) {
               const data = await res.json();
-              if (data.pay_url) window.location.href = data.pay_url;
+              if (data.action_url && data.params) {
+                // POST form submit to avoid Cloudflare blocking
+                const form = document.createElement("form");
+                form.method = "POST";
+                form.action = data.action_url;
+                for (const [k, v] of Object.entries(data.params as Record<string, string>)) {
+                  const input = document.createElement("input");
+                  input.type = "hidden";
+                  input.name = k;
+                  input.value = v;
+                  form.appendChild(input);
+                }
+                document.body.appendChild(form);
+                form.submit();
+              }
             } else {
-              const err = await res.json();
+              const err = await res.json().catch(() => ({ error: "Payment failed" }));
               setMessage({ type: "error", text: err.error || "Payment failed" });
             }
           }}
