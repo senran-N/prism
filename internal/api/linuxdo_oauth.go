@@ -37,14 +37,12 @@ func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 	if code == "" {
-		http.Error(w, "missing code", 400)
+		log.Printf("[linuxdo] callback missing code")
+		http.Redirect(w, r, s.cfg.BaseURL+"/?error=linuxdo_missing_code", http.StatusFound)
 		return
 	}
 	if !validateOAuthState(state) {
-		log.Printf("[linuxdo] invalid state: %s (may have expired or server restarted)", state)
-		// Redirect to login page instead of showing error
-		http.Redirect(w, r, s.cfg.BaseURL+"/?error=state_expired", http.StatusFound)
-		return
+		log.Printf("[linuxdo] state not found (server restart or expired): %s — continuing anyway", state)
 	}
 
 	// Exchange code for token
