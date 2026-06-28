@@ -14,7 +14,13 @@ import (
 
 // GET /api/github/login — redirect user to GitHub OAuth
 func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
-	state := generateOAuthState()
+	// Encode current user ID in state so callback knows who to link
+	userID := int64(0)
+	if user := s.getSessionUser(r); user != nil {
+		userID = user.ID
+	}
+	state := generateOAuthStateWithUser(userID)
+
 	params := url.Values{
 		"client_id":    {s.cfg.GitHubClientID},
 		"redirect_uri": {s.cfg.BaseURL + "/api/github/callback"},
@@ -33,11 +39,8 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_missing_code", http.StatusFound)
 		return
 	}
-	if !validateOAuthState(state) {
-		log.Printf("[github] invalid state: %s", state)
-		// Don't block — state can expire if user takes long on GitHub page
-		// Continue anyway, the code exchange will still validate via GitHub
-	}
+	// Extract user ID from state (who initiated the GitHub connect)
+	linkToUserID := validateOAuthStateWithUser(state)
 
 	// Exchange code for access token
 	token, err := exchangeGitHubCode(s.cfg.GitHubClientID, s.cfg.GitHubClientSecret, code)
@@ -61,39 +64,28 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[oauth] get repos error: %v", err)
 	}
 
-	// Link GitHub to user
+	// Link GitHub to the LinuxDo user who initiated the connect
 	if db.DB != nil {
-		existingUser := s.getSessionUser(r)
-		if existingUser != nil {
-			// User logged in (via LinuxDo) — link GitHub to their account
-			err := db.LinkGitHub(existingUser.ID, user.ID, user.Login, user.AvatarURL, token)
+		if linkToUserID > 0 {
+			// We know exactly which user started the GitHub connect
+			err := db.LinkGitHub(linkToUserID, user.ID, user.Login, user.AvatarURL, token)
 			if err != nil {
-				log.Printf("[github] link error: %v", err)
+				log.Printf("[github] link to user %d error: %v", linkToUserID, err)
 				http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_link_failed", http.StatusFound)
 				return
 			}
-			log.Printf("[github] linked %s to user %d (%s)", user.Login, existingUser.ID, existingUser.LinuxDoUsername)
+			s.setSession(w, linkToUserID) // refresh session
+			log.Printf("[github] linked %s to user %d", user.Login, linkToUserID)
 		} else {
-			log.Printf("[github] no session found during callback, trying to find user by github_id=%d", user.ID)
-			// Try to find existing user with this github_id
-			var userID int64
-			err := db.DB.QueryRow("SELECT id FROM users WHERE github_id = $1", user.ID).Scan(&userID)
-			if err == nil {
-				// Update existing github user
-				db.LinkGitHub(userID, user.ID, user.Login, user.AvatarURL, token)
-				s.setSession(w, userID)
-				log.Printf("[github] existing github user login: id=%d", userID)
-			} else {
-				// Create new user
-				dbUser, err := db.UpsertUser(user.ID, user.Login, user.AvatarURL, token)
-				if err != nil {
-					log.Printf("[github] create user error: %v", err)
-					http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_save_failed", http.StatusFound)
-					return
-				}
-				s.setSession(w, dbUser.ID)
-				log.Printf("[github] new user: id=%d login=%s", dbUser.ID, dbUser.GitHubLogin)
+			// No user ID in state — standalone GitHub login or expired state
+			log.Printf("[github] no user ID in state, standalone login github_id=%d", user.ID)
+			dbUser, err := db.UpsertUser(user.ID, user.Login, user.AvatarURL, token)
+			if err != nil {
+				log.Printf("[github] upsert error: %v", err)
+				http.Redirect(w, r, s.cfg.BaseURL+"/?error=github_save_failed", http.StatusFound)
+				return
 			}
+			s.setSession(w, dbUser.ID)
 		}
 	}
 

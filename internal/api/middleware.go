@@ -124,9 +124,8 @@ func generateOAuthState() string {
 
 	oauthStatesMu.Lock()
 	oauthStates[state] = time.Now()
-	// Clean old states
 	for k, t := range oauthStates {
-		if time.Since(t) > 10*time.Minute {
+		if time.Since(t) > 30*time.Minute {
 			delete(oauthStates, k)
 		}
 	}
@@ -142,7 +141,37 @@ func validateOAuthState(state string) bool {
 		return false
 	}
 	delete(oauthStates, state)
-	return time.Since(t) < 10*time.Minute
+	return time.Since(t) < 30*time.Minute
+}
+
+// State with user ID encoded: "randomhex.userID"
+var oauthUserStates = make(map[string]int64) // state → userID
+
+func generateOAuthStateWithUser(userID int64) string {
+	state := generateOAuthState()
+	oauthStatesMu.Lock()
+	oauthUserStates[state] = userID
+	oauthStatesMu.Unlock()
+	return state
+}
+
+// Returns userID (0 if not found or expired)
+func validateOAuthStateWithUser(state string) int64 {
+	oauthStatesMu.Lock()
+	defer oauthStatesMu.Unlock()
+
+	userID := oauthUserStates[state]
+	delete(oauthUserStates, state)
+
+	// Also validate timestamp
+	t, ok := oauthStates[state]
+	if ok {
+		delete(oauthStates, state)
+		if time.Since(t) > 30*time.Minute {
+			return 0
+		}
+	}
+	return userID
 }
 
 // ── Security headers ────────────────────────────
