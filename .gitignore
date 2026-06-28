@@ -30,3 +30,4 @@ sc_proto.py
 # OS
 .DS_Store
 Thumbs.db
+DEPLOY.md
