@@ -47,7 +47,8 @@ func UpsertUser(githubID int64, login, avatarURL, token string) (*User, error) {
 			avatar_url = EXCLUDED.avatar_url,
 			github_token = EXCLUDED.github_token,
 			updated_at = now()
-		RETURNING id, github_id, github_login, avatar_url, selected_repo, created_at
+		RETURNING id, COALESCE(github_id, 0), COALESCE(github_login, ''), COALESCE(avatar_url, ''),
+		          COALESCE(selected_repo, ''), created_at
 	`, githubID, login, avatarURL, token).Scan(
 		&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.SelectedRepo, &u.CreatedAt,
 	)
@@ -58,10 +59,11 @@ func UpsertUser(githubID int64, login, avatarURL, token string) (*User, error) {
 func GetUser(id int64) (*User, error) {
 	u := &User{}
 	err := DB.QueryRow(`
-		SELECT id, github_id, github_login, avatar_url, github_token, selected_repo,
-		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0),
-		       COALESCE(is_banned, false), COALESCE(ban_reason, ''), COALESCE(is_admin, false),
-		       COALESCE(balance, 0), COALESCE(total_rotations, 0), created_at
+		SELECT id, COALESCE(github_id, 0), COALESCE(github_login, ''), COALESCE(avatar_url, ''),
+		       COALESCE(github_token, ''), COALESCE(selected_repo, ''),
+		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''),
+		       COALESCE(trust_level, 0), COALESCE(is_banned, false), COALESCE(ban_reason, ''),
+		       COALESCE(is_admin, false), COALESCE(balance, 0), COALESCE(total_rotations, 0), created_at
 		FROM users WHERE id = $1
 	`, id).Scan(&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.GitHubToken, &u.SelectedRepo,
 		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel,
@@ -92,11 +94,13 @@ func UpsertLinuxDoUser(linuxdoID int64, username, name, avatarTemplate string, t
 			avatar_url = EXCLUDED.avatar_url,
 			trust_level = EXCLUDED.trust_level,
 			updated_at = now()
-		RETURNING id, COALESCE(github_id, 0), github_login, avatar_url, selected_repo,
-		          linuxdo_id, linuxdo_username, linuxdo_name, trust_level, created_at
+		RETURNING id, COALESCE(github_id, 0), COALESCE(github_login, ''), COALESCE(avatar_url, ''),
+		          COALESCE(selected_repo, ''), COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''),
+		          COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0), created_at
 	`, linuxdoID, username, name, avatarURL, trustLevel).Scan(
-		&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.SelectedRepo,
-		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel, &u.CreatedAt,
+		&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL,
+		&u.SelectedRepo, &u.LinuxDoID, &u.LinuxDoUsername,
+		&u.LinuxDoName, &u.TrustLevel, &u.CreatedAt,
 	)
 	return u, err
 }
