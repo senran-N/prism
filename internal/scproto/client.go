@@ -503,8 +503,30 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 	if err != nil {
 		return fmt.Errorf("save env config: %w", err)
 	}
-
 	log.Printf("[scproto] environment saved: status=%d url=%s", status, finalURL)
+
+	// Trigger a snapshot build — without this, the environment won't be
+	// provisioned and tickets fail with "Failed to get the current diff".
+	log.Printf("[scproto] triggering snapshot build...")
+	buildHTML, err := c.get(editURL)
+	if err != nil {
+		return fmt.Errorf("get page for build csrf: %w", err)
+	}
+	buildCSRF := extractCSRF(buildHTML)
+	_, _, buildStatus, err := c.post(
+		scBase+"/projects/"+projectID+"/snapshots",
+		url.Values{"authenticity_token": {buildCSRF}},
+		map[string]string{
+			"X-CSRF-Token": buildCSRF,
+			"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
+		},
+	)
+	if err != nil {
+		log.Printf("[scproto] snapshot build trigger warning: %v", err)
+	} else {
+		log.Printf("[scproto] snapshot build triggered: status=%d", buildStatus)
+	}
+
 	return nil
 }
 
