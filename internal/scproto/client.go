@@ -470,23 +470,48 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("get env setup: %w", err)
 	}
 
+	// Log page structure to understand what SC expects
+	// Find all form actions on the page
+	formRe := regexp.MustCompile(`<form[^>]*action="([^"]*)"[^>]*`)
+	for _, fm := range formRe.FindAllStringSubmatch(setupHTML, -1) {
+		log.Printf("[scproto] env setup page form action: %s", fm[1])
+	}
+	// Log a snippet around "environment_setup" or "confirm" or "setup"
+	for _, keyword := range []string{"environment_setup", "setup_instruction", "Confirm", "Save", "submit"} {
+		idx := strings.Index(strings.ToLower(setupHTML), strings.ToLower(keyword))
+		if idx >= 0 {
+			start := max(0, idx-80)
+			end := min(len(setupHTML), idx+80)
+			log.Printf("[scproto] env page near '%s': ...%s...", keyword, setupHTML[start:end])
+		}
+	}
+
 	csrf := extractCSRF(setupHTML)
 	if csrf == "" {
 		return fmt.Errorf("no CSRF on env setup page")
 	}
 
-	// Only send the minimal fields needed to confirm the setup.
-	// The page has multiple unrelated forms (chat, workspace settings)
-	// so we must NOT extract fields from all of them.
+	// Try the environment setup-specific form action if it exists
+	setupFormRe := regexp.MustCompile(`<form[^>]*action="([^"]*environment_setup[^"]*)"`)
+	formAction := setupURL
+	if m := setupFormRe.FindStringSubmatch(setupHTML); m != nil {
+		if strings.HasPrefix(m[1], "/") {
+			formAction = scBase + m[1]
+		} else {
+			formAction = m[1]
+		}
+		log.Printf("[scproto] using env setup form action: %s", formAction)
+	}
+
 	data := url.Values{
 		"authenticity_token": {csrf},
 		"_method":            {"patch"},
 		"commit":             {"Confirm"},
 	}
 
-	log.Printf("[scproto] env setup POST: %s", setupURL)
+	log.Printf("[scproto] env setup POST: %s", formAction)
 
-	_, finalURL, status, err := c.post(setupURL, data, map[string]string{
+	_, finalURL, status, err := c.post(formAction, data, map[string]string{
 		"X-CSRF-Token": csrf,
 		"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
 	})
