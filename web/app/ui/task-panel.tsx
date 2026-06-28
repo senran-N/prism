@@ -4,6 +4,19 @@ import { useState, useRef, useEffect } from "react";
 import { useLocale } from "./locale-context";
 import type { Task } from "./dashboard";
 
+function BalanceBadge() {
+  const [bal, setBal] = useState<{balance:number;can_rotate:boolean}|null>(null);
+  const { locale } = useLocale();
+  useEffect(() => { fetch("/api/balance").then(r=>r.ok?r.json():null).then(setBal).catch(()=>{}); }, []);
+  if (!bal) return <p className="text-[12px] text-[#8792a2]">{locale==="zh"?"额度自动轮转":"Credits auto-rotate"}</p>;
+  return (
+    <p className="text-[12px]">
+      <span className={bal.can_rotate?"text-[#0caf60]":"text-[#f5a623]"}>●</span>{" "}
+      <span className="text-[#8792a2]">{bal.balance.toFixed(0)} {locale==="zh"?"积分":"credits"}</span>
+    </p>
+  );
+}
+
 const MODEL_NAMES: Record<string, string> = {
   claude_code_claude_opus_4_8: "Claude Code · Opus 4.8",
   claude_code_claude_opus_4_7: "Claude Code · Opus 4.7",
@@ -97,7 +110,7 @@ export default function TaskPanel({ model, activeTask, onTaskCreated }: Props) {
             <span className="text-[#635bff] font-medium">{MODEL_NAMES[model] || model}</span>
             {" · "}<kbd className="text-[11px] bg-[#f6f9fc] border border-[#e3e8ee] rounded px-1 py-0.5 font-mono">⌘↵</kbd> {t("to_send")}
           </p>
-          <p className="text-[12px] text-[#8792a2]">{t("credits_auto_rotate")}</p>
+          <BalanceBadge />
         </div>
       </div>
     </div>

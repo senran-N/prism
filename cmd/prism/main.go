@@ -35,6 +35,9 @@ func main() {
 		}
 	}
 
+	// Set rotation cost from config
+	db.RotationCost = cfg.RotationCost
+
 	pool := account.NewPool()
 	sched := scheduler.New(pool, scheduler.Config{
 		YYDSAPIKey: cfg.YYDSAPIKey,

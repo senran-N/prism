@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 type Config struct {
 	Addr        string
@@ -17,10 +20,15 @@ type Config struct {
 	// LinuxDo OAuth
 	LinuxDoClientID     string
 	LinuxDoClientSecret string
+	LinuxDoRedirectURI  string
+
+	// Rotation pricing (LDC credits per rotation, admin-configurable)
+	RotationCost float64
 
 	// GitHub OAuth App (user-facing)
 	GitHubClientID     string
 	GitHubClientSecret string
+	GitHubRedirectURI  string
 
 	// GitHub Service Account (SC binding)
 	GitHubUser string
@@ -48,8 +56,11 @@ func Load() Config {
 		SessionSecret:      envOr("SESSION_SECRET", "prism-dev-secret-change-me"),
 		LinuxDoClientID:     envOr("LINUXDO_CLIENT_ID", ""),
 		LinuxDoClientSecret: envOr("LINUXDO_CLIENT_SECRET", ""),
+		LinuxDoRedirectURI:  envOr("LINUXDO_REDIRECT_URI", ""),
+		RotationCost:        envOrFloat("ROTATION_COST", 20.0),
 		GitHubClientID:     envOr("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: envOr("GITHUB_CLIENT_SECRET", ""),
+		GitHubRedirectURI:  envOr("GITHUB_REDIRECT_URI", ""),
 		CreditClientID:     envOr("CREDIT_CLIENT_ID", ""),
 		CreditClientSecret: envOr("CREDIT_CLIENT_SECRET", ""),
 		GitHubUser:         envOr("GITHUB_USER", ""),
@@ -63,6 +74,15 @@ func Load() Config {
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envOrFloat(key string, fallback float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
 	}
 	return fallback
 }

@@ -103,6 +103,34 @@ export default function RedeemPanel() {
         </div>
       )}
 
+      {/* LDC Credit 充值 */}
+      <div>
+        <h3 className="text-[12px] font-medium text-[#8792a2] uppercase tracking-wider mb-2">
+          {isZh ? "积分充值" : "Buy Credits"}
+        </h3>
+        <button
+          onClick={async () => {
+            const res = await fetch("/api/credit/pay", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ amount: balance?.rotation_cost || 20, description: "Prism 1 Rotation" }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.pay_url) window.location.href = data.pay_url;
+            } else {
+              const err = await res.json();
+              setMessage({ type: "error", text: err.error || "Payment failed" });
+            }
+          }}
+          className="w-full flex items-center justify-center gap-2 bg-[#f39c12] hover:bg-[#e67e22] text-white rounded-lg px-4 py-2.5 text-[13px] font-medium transition-colors"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+          {isZh ? `支付 ${balance?.rotation_cost || 20} LDC = 1 次轮转` : `Pay ${balance?.rotation_cost || 20} LDC = 1 rotation`}
+        </button>
+        <p className="text-[11px] text-[#8792a2] mt-1 text-center">{isZh ? "通过 LinuxDo Credit 支付" : "Pay via LinuxDo Credit"}</p>
+      </div>
+
       {/* Stats */}
       {balance && (
         <div className="mt-auto pt-4 border-t border-[#e3e8ee] text-[12px] text-[#8792a2]">

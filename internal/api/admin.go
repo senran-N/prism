@@ -217,11 +217,12 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/config
 func (s *Server) handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GitHubUser string `json:"github_user"`
-		GitHubPass string `json:"github_pass"`
-		GitHubTOTP string `json:"github_totp"`
-		YYDSAPIKey string `json:"yyds_api_key"`
-		RepoID     string `json:"repo_id"`
+		GitHubUser   string   `json:"github_user"`
+		GitHubPass   string   `json:"github_pass"`
+		GitHubTOTP   string   `json:"github_totp"`
+		YYDSAPIKey   string   `json:"yyds_api_key"`
+		RepoID       string   `json:"repo_id"`
+		RotationCost *float64 `json:"rotation_cost"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, 400, "invalid body")
@@ -244,6 +245,10 @@ func (s *Server) handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request)
 	if req.RepoID != "" {
 		s.cfg.RepoID = req.RepoID
 	}
+	if req.RotationCost != nil && *req.RotationCost > 0 {
+		s.cfg.RotationCost = *req.RotationCost
+		db.RotationCost = *req.RotationCost
+	}
 	s.mu.Unlock()
 
 	log.Println("[admin] config updated")
@@ -262,6 +267,7 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 		"repo_id":           s.cfg.RepoID,
 		"github_client_id":  s.cfg.GitHubClientID,
 		"base_url":          s.cfg.BaseURL,
+		"rotation_cost":     s.cfg.RotationCost,
 	})
 }
 

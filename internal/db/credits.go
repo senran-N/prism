@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const RotationCost = 20.0 // LDC credits per rotation
+var RotationCost = 20.0 // LDC credits per rotation, set from config
 
 // ── User balance ────────────────────────────────
 
