@@ -53,6 +53,11 @@ func NewClient() *Client {
 	}
 }
 
+// HTTPClient returns the underlying http.Client with SC session cookies.
+func (c *Client) HTTPClient() *http.Client {
+	return c.http
+}
+
 // SetFingerprint replaces the client's browser fingerprint with a user-provided one.
 func (c *Client) SetFingerprint(fp Fingerprint) {
 	c.fp = fp
@@ -461,6 +466,94 @@ func (c *Client) GetTicketStatus(ticketID string) (*TicketStatus, error) {
 		ts.Cost = m[0]
 	}
 	return ts, nil
+}
+
+// ── Get implementation messages ──────────────────
+
+type Message struct {
+	ID      string `json:"id"`
+	Author  string `json:"author"`
+	Content string `json:"content"`
+}
+
+type Implementation struct {
+	ImplID   string    `json:"impl_id"`
+	Status   string    `json:"status"`
+	Messages []Message `json:"messages"`
+}
+
+func (c *Client) GetImplementation(ticketID string) (*Implementation, error) {
+	// First get the ticket page to find implementation ID
+	html, err := c.get(scBase + "/tickets/" + ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find implementation link
+	implRe := regexp.MustCompile(`/tickets/` + ticketID + `/implementations/([A-Za-z0-9]+)`)
+	m := implRe.FindStringSubmatch(html)
+	if m == nil {
+		return nil, fmt.Errorf("no implementation found")
+	}
+	implID := m[1]
+
+	// Get implementation page
+	implHTML, err := c.get(scBase + "/tickets/" + ticketID + "/implementations/" + implID)
+	if err != nil {
+		return nil, err
+	}
+
+	impl := &Implementation{ImplID: implID}
+
+	// Extract status
+	statusRe := regexp.MustCompile(`(Running|Waiting|Completed|Failed)`)
+	if sm := statusRe.FindStringSubmatch(implHTML); sm != nil {
+		impl.Status = sm[1]
+	}
+
+	// Extract messages
+	msgRe := regexp.MustCompile(`id="message_([^"]+)"`)
+	authorRe := regexp.MustCompile(`font-semibold[^>]*>([^<]+)</span>`)
+	proseRe := regexp.MustCompile(`class="[^"]*prose[^"]*"[^>]*>(.*?)</div>\s*</div>`)
+
+	msgIDs := msgRe.FindAllStringSubmatch(implHTML, -1)
+	authors := authorRe.FindAllStringSubmatch(implHTML, -1)
+	contents := proseRe.FindAllStringSubmatch(implHTML, -1)
+
+	for i := 0; i < len(msgIDs) && i < len(contents); i++ {
+		author := "Agent"
+		if i < len(authors) {
+			author = strings.TrimSpace(authors[i][1])
+		}
+		// Strip HTML tags from content
+		content := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(contents[i][1], "")
+		content = strings.TrimSpace(content)
+		if len(content) > 2000 {
+			content = content[:2000] + "..."
+		}
+
+		impl.Messages = append(impl.Messages, Message{
+			ID:      msgIDs[i][1],
+			Author:  author,
+			Content: content,
+		})
+	}
+
+	return impl, nil
+}
+
+func (c *Client) GetTicketHTML(ticketID string) (string, error) {
+	html, err := c.get(scBase + "/tickets/" + ticketID)
+	if err != nil {
+		return "", err
+	}
+	// Find implementation and get its HTML
+	implRe := regexp.MustCompile(`/tickets/` + ticketID + `/implementations/([A-Za-z0-9]+)`)
+	m := implRe.FindStringSubmatch(html)
+	if m == nil {
+		return "", fmt.Errorf("no implementation")
+	}
+	return c.get(scBase + "/tickets/" + ticketID + "/implementations/" + m[1])
 }
 
 // ── Send follow-up message ──────────────────────────────────

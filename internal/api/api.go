@@ -73,6 +73,8 @@ func (s *Server) routes() {
 	// Authenticated user endpoints
 	s.mux.HandleFunc("POST /api/tasks", s.requireAuth(limitBody(1<<20, s.handleCreateTask)))
 	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.requireAuth(s.handleTaskStatus))
+	s.mux.HandleFunc("GET /api/tasks/{id}/messages", s.requireAuth(s.handleTaskMessages))
+	s.mux.HandleFunc("POST /api/tasks/{id}/message", s.requireAuth(limitBody(1<<16, s.handleTaskSendMessage)))
 	s.mux.HandleFunc("GET /api/tasks/history", s.requireAuth(s.handleTaskHistory))
 	s.mux.HandleFunc("GET /api/events", s.requireAuth(s.handleSSE))
 

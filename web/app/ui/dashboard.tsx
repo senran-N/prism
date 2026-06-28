@@ -36,7 +36,9 @@ export default function Dashboard() {
         <div className="bg-white border-b border-[#e3e8ee] px-5 py-2.5">
           <ModelSelector value={selectedModel} onChange={setSelectedModel} />
         </div>
-        <TaskPanel model={selectedModel} activeTask={activeTask} onTaskCreated={(task) => { setTasks(prev => [task, ...prev]); setActiveTask(task.id); }} />
+        <TaskPanel model={selectedModel} activeTask={activeTask}
+          onTaskCreated={(task) => { setTasks(prev => [task, ...prev]); setActiveTask(task.id); }}
+          onStatusChange={(id, status) => setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t))} />
       </div>
     </div>
   );

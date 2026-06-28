@@ -10,6 +10,7 @@ import (
 	"github.com/senran-N/prism/internal/api"
 	"github.com/senran-N/prism/internal/config"
 	"github.com/senran-N/prism/internal/db"
+	"github.com/senran-N/prism/internal/proxy"
 	"github.com/senran-N/prism/internal/scheduler"
 )
 
@@ -59,8 +60,11 @@ func main() {
 
 	apiServer := api.New(sched, pool, cfg)
 
+	proxyHandler := proxy.New(pool)
+
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiServer)
+	mux.Handle("/proxy/", proxyHandler)
 
 	handler := api.AntiBotMiddleware(
 		api.SecurityHeaders(
