@@ -101,7 +101,12 @@ func (s *Scheduler) registerOneAccount() error {
 		return err
 	}
 
-	time.Sleep(EnvSetupWait)
+	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
+		log.Printf("[warmer] env setup warning: %v", err)
+	}
+	if err := sc.WaitForEnvironment(projectID, 60*time.Second); err != nil {
+		log.Printf("[warmer] env wait warning: %v", err)
+	}
 
 	newAcct := &account.Account{
 		ID:          account.GenerateAccountID(),

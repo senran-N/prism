@@ -22,22 +22,18 @@ func New(pool *account.Pool) *Handler {
 	return &Handler{pool: pool}
 }
 
-// ServeHTTP reverse-proxies SC ticket pages using the account that created
-// the ticket, eliminating the need for browser-side SC login.
+// ServeHTTP reverse-proxies SC pages using the correct account's session.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	targetPath := strings.TrimPrefix(r.URL.Path, "/proxy")
 	targetPath = path.Clean(targetPath)
-	if strings.Contains(targetPath, "..") || !strings.HasPrefix(targetPath, "/tickets/") {
+	if strings.Contains(targetPath, "..") {
 		http.Error(w, "forbidden", 403)
 		return
 	}
 
-	parts := strings.SplitN(strings.TrimPrefix(targetPath, "/tickets/"), "/", 2)
-	ticketID := parts[0]
-
-	acct := h.pool.GetTicketAccount(ticketID)
+	acct := h.resolveAccount(targetPath)
 	if acct == nil || acct.Client == nil {
-		http.Error(w, "ticket session not found — please create a new task", 404)
+		http.Error(w, "session not found — please create a new task", 404)
 		return
 	}
 
@@ -57,18 +53,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := acct.Client.HTTPClient().Do(req)
 	if err != nil {
-		log.Printf("[proxy] upstream error for ticket %s: %v", ticketID, err)
+		log.Printf("[proxy] upstream error: %v", err)
 		http.Error(w, "upstream error", 502)
 		return
 	}
 	defer resp.Body.Close()
-
-	finalURL := resp.Request.URL.String()
-	if !strings.Contains(finalURL, "/tickets/") && !strings.Contains(finalURL, "/implementations/") {
-		log.Printf("[proxy] ticket %s: SC redirected to %s (possible session expiry)", ticketID, finalURL)
-		http.Error(w, "SC session expired — please create a new task", 502)
-		return
-	}
 
 	var reader io.Reader = resp.Body
 	if resp.Header.Get("Content-Encoding") == "gzip" {
@@ -89,6 +78,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		html = strings.Replace(html, "<head>", `<head><base href="`+scBase+`/">`, 1)
 		html = strings.ReplaceAll(html, `href="`+scBase+`/tickets/`, `href="/proxy/tickets/`)
 		html = strings.ReplaceAll(html, `href="/tickets/`, `href="/proxy/tickets/`)
+		html = strings.ReplaceAll(html, `href="`+scBase+`/projects/`, `href="/proxy/projects/`)
+		html = strings.ReplaceAll(html, `href="/projects/`, `href="/proxy/projects/`)
 		body = []byte(html)
 	}
 
@@ -107,4 +98,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
+}
+
+// resolveAccount finds the SC account for a proxied path.
+func (h *Handler) resolveAccount(targetPath string) *account.Account {
+	if strings.HasPrefix(targetPath, "/tickets/") {
+		ticketID := strings.SplitN(strings.TrimPrefix(targetPath, "/tickets/"), "/", 2)[0]
+		return h.pool.GetTicketAccount(ticketID)
+	}
+	if strings.HasPrefix(targetPath, "/projects/") {
+		projectID := strings.SplitN(strings.TrimPrefix(targetPath, "/projects/"), "/", 2)[0]
+		return h.pool.GetProjectAccount(projectID)
+	}
+	return nil
 }

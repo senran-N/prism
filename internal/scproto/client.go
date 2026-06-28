@@ -134,6 +134,9 @@ var (
 	reIdentity  = regexp.MustCompile(`/identities/([A-Za-z0-9]+)`)
 	reModels    = regexp.MustCompile(`implementations\[([^\]]+)\]`)
 	reBranch    = regexp.MustCompile(`ticket\[base_branches\]\[([^\]]+)\]`)
+	reEnvSetup  = regexp.MustCompile(`/environment_setups/([A-Za-z0-9]+)`)
+	reTextarea  = regexp.MustCompile(`<textarea[^>]*name="([^"]+)"[^>]*>([\s\S]*?)</textarea>`)
+	reHidden    = regexp.MustCompile(`<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"`)
 )
 
 func extractCSRF(html string) string {
@@ -430,6 +433,87 @@ func (c *Client) CreateProject(repoID string) (projectID string, err error) {
 		return "", fmt.Errorf("project creation failed: %s", finalURL)
 	}
 	return m[1], nil
+}
+
+// ── Environment Setup ──────────────────────────────────────
+
+// CompleteEnvironmentSetup finds and confirms any pending environment
+// setup for a project so that tickets can run immediately.
+func (c *Client) CompleteEnvironmentSetup(projectID string) error {
+	html, err := c.get(scBase + "/projects/" + projectID)
+	if err != nil {
+		return fmt.Errorf("get project: %w", err)
+	}
+
+	m := reEnvSetup.FindStringSubmatch(html)
+	if m == nil {
+		log.Printf("[scproto] no pending environment setup for project %s", projectID)
+		return nil
+	}
+	setupID := m[1]
+	setupURL := fmt.Sprintf("%s/projects/%s/environment_setups/%s", scBase, projectID, setupID)
+
+	log.Printf("[scproto] completing environment setup %s", setupID)
+
+	setupHTML, err := c.get(setupURL)
+	if err != nil {
+		return fmt.Errorf("get env setup: %w", err)
+	}
+
+	fields := extractFormFields(setupHTML)
+	if fields.CSRF == "" {
+		return fmt.Errorf("no CSRF on env setup page")
+	}
+
+	data := buildFormData(fields, [][2]string{
+		{"_method", "patch"},
+		{"commit", "Confirm"},
+	})
+
+	for _, match := range reTextarea.FindAllStringSubmatch(setupHTML, -1) {
+		data.Set(match[1], strings.TrimSpace(match[2]))
+	}
+
+	for _, match := range reHidden.FindAllStringSubmatch(setupHTML, -1) {
+		name := match[1]
+		if name != "authenticity_token" && name != "_method" && name != "spinner" {
+			if _, exists := data[name]; !exists {
+				data.Set(name, match[2])
+			}
+		}
+	}
+
+	log.Printf("[scproto] env setup form keys: %v", keysOf(data))
+
+	_, finalURL, status, err := c.post(setupURL, data, map[string]string{
+		"X-CSRF-Token": fields.CSRF,
+		"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
+	})
+	if err != nil {
+		return fmt.Errorf("submit env setup: %w", err)
+	}
+
+	log.Printf("[scproto] env setup confirmed: status=%d url=%s", status, finalURL)
+	return nil
+}
+
+// WaitForEnvironment polls the project page until the environment is
+// ready or the timeout expires.
+func (c *Client) WaitForEnvironment(projectID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		html, err := c.get(scBase + "/projects/" + projectID)
+		if err != nil {
+			return err
+		}
+		if !reEnvSetup.MatchString(html) {
+			log.Printf("[scproto] environment ready for project %s", projectID)
+			return nil
+		}
+		log.Printf("[scproto] environment still setting up, waiting...")
+		time.Sleep(10 * time.Second)
+	}
+	return fmt.Errorf("environment setup timed out after %s", timeout)
 }
 
 // ── Ticket ──────────────────────────────────────────────────

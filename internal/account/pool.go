@@ -71,6 +71,17 @@ func (p *Pool) GetTicketAccount(ticketID string) *Account {
 	return p.accounts[acctID]
 }
 
+func (p *Pool) GetProjectAccount(projectID string) *Account {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, a := range p.accounts {
+		if a.ProjectID == projectID {
+			return a
+		}
+	}
+	return nil
+}
+
 // Add registers an account in the pool. If ready, also enqueue.
 func (p *Pool) Add(a *Account) {
 	p.mu.Lock()

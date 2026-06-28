@@ -130,9 +130,14 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		return nil, fmt.Errorf("sc project: %w", err)
 	}
 
-	// 7. Wait for environment setup
-	log.Println("[scheduler] waiting for environment setup (30s)...")
-	time.Sleep(30 * time.Second)
+	// 7. Complete environment setup
+	log.Println("[scheduler] completing environment setup...")
+	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
+		log.Printf("[scheduler] env setup warning: %v", err)
+	}
+	if err := sc.WaitForEnvironment(projectID, 60*time.Second); err != nil {
+		log.Printf("[scheduler] env wait warning: %v", err)
+	}
 
 	// 8. Add to pool
 	newAcct := &account.Account{
