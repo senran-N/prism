@@ -53,6 +53,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/linuxdo/callback", s.rateLimit(10, time.Minute, s.handleLinuxDoCallback))
 	s.mux.HandleFunc("GET /api/linuxdo/status", s.handleLinuxDoStatus)
 
+	// User credits & redemption
+	s.mux.HandleFunc("GET /api/balance", s.requireAuth(s.handleGetBalance))
+	s.mux.HandleFunc("POST /api/redeem", s.requireAuth(limitBody(1<<10, s.handleRedeem)))
+	s.mux.HandleFunc("POST /api/fingerprint", s.requireAuth(limitBody(1<<14, s.handleFingerprint)))
+
+	// Admin: redemption codes
+	s.mux.HandleFunc("POST /api/admin/codes", s.requireAdmin(limitBody(1<<14, s.handleAdminCreateCode)))
+	s.mux.HandleFunc("GET /api/admin/codes", s.requireAdmin(s.handleAdminListCodes))
+
 	// Credit payment
 	s.mux.HandleFunc("POST /api/credit/pay", s.requireAuth(limitBody(1<<16, s.handleCreditPay)))
 	s.mux.HandleFunc("POST /api/credit/notify", limitBody(1<<16, s.handleCreditNotify))
@@ -174,8 +183,14 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		req.Model = "claude_code_claude_opus_4_8"
 	}
 
-	// Acquire an account (auto-rotates if needed)
-	acct, err := s.scheduler.AcquireAccount()
+	// Get current user ID for billing
+	var userID int64
+	if user := s.getSessionUser(r); user != nil {
+		userID = user.ID
+	}
+
+	// Acquire an account (auto-rotates if needed, bills user)
+	acct, err := s.scheduler.AcquireAccount(userID)
 	if err != nil {
 		log.Printf("[api] acquire account error: %v", err)
 		writeError(w, 503, "no accounts available: "+err.Error())
@@ -238,6 +253,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"is_banned":         user.IsBanned,
 		"ban_reason":        user.BanReason,
 		"is_admin":          user.IsAdmin,
+		"balance":           user.Balance,
+		"total_rotations":   user.TotalRotations,
 	})
 }
 

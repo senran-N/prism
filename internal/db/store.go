@@ -22,6 +22,8 @@ type User struct {
 	IsBanned        bool      `json:"is_banned"`
 	BanReason       string    `json:"ban_reason"`
 	IsAdmin         bool      `json:"is_admin"`
+	Balance         float64   `json:"balance"`
+	TotalRotations  int       `json:"total_rotations"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -58,11 +60,13 @@ func GetUser(id int64) (*User, error) {
 	err := DB.QueryRow(`
 		SELECT id, github_id, github_login, avatar_url, github_token, selected_repo,
 		       COALESCE(linuxdo_id, 0), COALESCE(linuxdo_username, ''), COALESCE(linuxdo_name, ''), COALESCE(trust_level, 0),
-		       COALESCE(is_banned, false), COALESCE(ban_reason, ''), COALESCE(is_admin, false), created_at
+		       COALESCE(is_banned, false), COALESCE(ban_reason, ''), COALESCE(is_admin, false),
+		       COALESCE(balance, 0), COALESCE(total_rotations, 0), created_at
 		FROM users WHERE id = $1
 	`, id).Scan(&u.ID, &u.GitHubID, &u.GitHubLogin, &u.AvatarURL, &u.GitHubToken, &u.SelectedRepo,
 		&u.LinuxDoID, &u.LinuxDoUsername, &u.LinuxDoName, &u.TrustLevel,
-		&u.IsBanned, &u.BanReason, &u.IsAdmin, &u.CreatedAt)
+		&u.IsBanned, &u.BanReason, &u.IsAdmin,
+		&u.Balance, &u.TotalRotations, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

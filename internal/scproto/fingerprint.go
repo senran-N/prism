@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -55,6 +56,39 @@ var viewports = [][2]int{
 	{1536, 864},
 	{1366, 768},
 	{1680, 1050},
+}
+
+// FingerprintFromUser creates a fingerprint based on real user data.
+// This makes SC registrations look like they come from diverse real browsers.
+func FingerprintFromUser(ua, lang, platform string) Fingerprint {
+	if ua == "" || lang == "" {
+		return RandomFingerprint()
+	}
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	chrome := chromeVersions[r.Intn(len(chromeVersions))]
+	vp := viewports[r.Intn(len(viewports))]
+
+	// Use user's language but randomize Chrome version
+	secCHUA := fmt.Sprintf(
+		`"Chromium";v="%d", "Google Chrome";v="%d", "Not-A.Brand";v="99"`,
+		chrome.version, chrome.version,
+	)
+
+	secPlatform := `"Linux"`
+	if strings.Contains(ua, "Mac") {
+		secPlatform = `"macOS"`
+	} else if strings.Contains(ua, "Windows") {
+		secPlatform = `"Windows"`
+	}
+
+	return Fingerprint{
+		UserAgent:      ua,
+		AcceptLanguage: lang,
+		Platform:       secPlatform,
+		SecCHUA:        secCHUA,
+		Viewport:       vp,
+	}
 }
 
 // RandomFingerprint generates a realistic browser fingerprint.

@@ -53,6 +53,11 @@ func NewClient() *Client {
 	}
 }
 
+// SetFingerprint replaces the client's browser fingerprint with a user-provided one.
+func (c *Client) SetFingerprint(fp Fingerprint) {
+	c.fp = fp
+}
+
 // newNoRedirectClient returns a client that does NOT follow redirects.
 func (c *Client) newNoRedirectClient() *http.Client {
 	return &http.Client{

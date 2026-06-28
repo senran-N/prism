@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/senran-N/prism/internal/account"
+	"github.com/senran-N/prism/internal/db"
 	"github.com/senran-N/prism/internal/github"
 	"github.com/senran-N/prism/internal/mail"
 	"github.com/senran-N/prism/internal/scproto"
@@ -37,9 +38,8 @@ func New(pool *account.Pool, cfg Config) *Scheduler {
 }
 
 // AcquireAccount returns a ready account. If none available, performs
-// automatic rotation: unbind GitHub from exhausted account → register
-// new account → bind GitHub → create project.
-func (s *Scheduler) AcquireAccount() (*account.Account, error) {
+// automatic rotation. userID is used for billing (0 = system/free).
+func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -47,11 +47,27 @@ func (s *Scheduler) AcquireAccount() (*account.Account, error) {
 		return a, nil
 	}
 
+	// Rotation needed — check user billing
+	if userID > 0 {
+		balance, err := db.GetUserBalance(userID)
+		if err != nil {
+			log.Printf("[scheduler] balance check error: %v", err)
+		} else if balance < db.RotationCost {
+			return nil, fmt.Errorf("insufficient balance (%.2f < %.2f), please recharge or redeem a code", balance, db.RotationCost)
+		}
+
+		// Deduct rotation cost
+		if err := db.DeductBalance(userID, db.RotationCost); err != nil {
+			return nil, fmt.Errorf("deduct balance: %w", err)
+		}
+		log.Printf("[scheduler] deducted %.2f from user %d for rotation", db.RotationCost, userID)
+	}
+
 	log.Println("[scheduler] no ready accounts, starting rotation...")
-	return s.rotate()
+	return s.rotate(userID)
 }
 
-func (s *Scheduler) rotate() (*account.Account, error) {
+func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 	// 1. Find an account with GitHub bound and unbind it
 	old := s.pool.FindExhaustedWithGitHub()
 	if old != nil && old.Client != nil {
@@ -77,9 +93,18 @@ func (s *Scheduler) rotate() (*account.Account, error) {
 		return nil, fmt.Errorf("create email: %w", err)
 	}
 
-	// 4. Register SC account
+	// 4. Register SC account (use user fingerprint if available)
 	password := fmt.Sprintf("Prism#%06dxPass!", time.Now().Unix()%1000000)
 	sc := scproto.NewClient()
+
+	// Apply user's browser fingerprint to reduce risk detection
+	if userID > 0 {
+		fp, err := db.GetLatestFingerprint(userID)
+		if err == nil && fp != nil && fp.UserAgent != "" {
+			sc.SetFingerprint(scproto.FingerprintFromUser(fp.UserAgent, fp.Language, fp.Platform))
+			log.Printf("[scheduler] using user %d fingerprint for registration", userID)
+		}
+	}
 	log.Printf("[scheduler] registering SC: %s", emailAddr)
 	if err := sc.Register(emailAddr, password, "Prism User"); err != nil {
 		return nil, fmt.Errorf("sc register: %w", err)
