@@ -295,7 +295,7 @@ func (c *Client) ConnectGitHub(ghClient *http.Client) error {
 	}
 	oauthURL := resp.Header.Get("Location")
 
-	// Step B: GitHub auto-authorize → 302 → callback
+	// Step B: GitHub authorize → 302 (auto) or 200 (consent page)
 	ghNR := &http.Client{
 		Jar:       ghClient.Jar,
 		Transport: ghClient.Transport,
@@ -309,11 +309,61 @@ func (c *Client) ConnectGitHub(ghClient *http.Client) error {
 	if err != nil {
 		return fmt.Errorf("oauth step B: %w", err)
 	}
-	resp2.Body.Close()
-	if resp2.StatusCode != 302 {
-		return fmt.Errorf("oauth step B: expected 302, got %d", resp2.StatusCode)
+
+	var callbackURL string
+
+	if resp2.StatusCode == 302 {
+		// Auto-authorized
+		callbackURL = resp2.Header.Get("Location")
+		resp2.Body.Close()
+	} else if resp2.StatusCode == 200 {
+		// Consent page — need to submit the authorize form
+		body2, _ := io.ReadAll(resp2.Body)
+		resp2.Body.Close()
+		pageHTML := string(body2)
+
+		// Find the authorize form action and authenticity_token
+		actionRe := regexp.MustCompile(`form[^>]*action="([^"]*authorize[^"]*)"`)
+		tokenRe := regexp.MustCompile(`name="authenticity_token"[^>]*value="([^"]+)"`)
+
+		actionMatch := actionRe.FindStringSubmatch(pageHTML)
+		tokenMatch := tokenRe.FindStringSubmatch(pageHTML)
+
+		if actionMatch == nil || tokenMatch == nil {
+			return fmt.Errorf("oauth step B: cannot parse consent page")
+		}
+
+		authorizeURL := actionMatch[1]
+		if !strings.HasPrefix(authorizeURL, "http") {
+			authorizeURL = "https://github.com" + authorizeURL
+		}
+
+		formData := url.Values{
+			"authenticity_token": {tokenMatch[1]},
+			"authorize":          {"1"},
+		}
+
+		log.Printf("[scproto] oauth step B: submitting consent form to %s", authorizeURL)
+
+		authReq, _ := http.NewRequest("POST", authorizeURL, strings.NewReader(formData.Encode()))
+		authReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		authReq.Header.Set("User-Agent", userAgent)
+
+		resp3, err := ghNR.Do(authReq)
+		if err != nil {
+			return fmt.Errorf("oauth step B consent: %w", err)
+		}
+		resp3.Body.Close()
+
+		if resp3.StatusCode != 302 {
+			return fmt.Errorf("oauth step B consent: expected 302, got %d", resp3.StatusCode)
+		}
+		callbackURL = resp3.Header.Get("Location")
+	} else {
+		resp2.Body.Close()
+		return fmt.Errorf("oauth step B: unexpected status %d", resp2.StatusCode)
 	}
-	callbackURL := resp2.Header.Get("Location")
+
 	if !strings.Contains(callbackURL, "superconductor.com") {
 		return fmt.Errorf("oauth callback not SC: %s", callbackURL)
 	}
