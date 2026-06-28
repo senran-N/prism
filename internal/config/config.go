@@ -23,6 +23,10 @@ type Config struct {
 	GitHubPass string
 	GitHubTOTP string
 
+	// LinuxDo Credit
+	CreditClientID     string
+	CreditClientSecret string
+
 	// YYDS Mail
 	YYDSAPIKey string
 
@@ -40,6 +44,8 @@ func Load() Config {
 		LinuxDoClientSecret: envOr("LINUXDO_CLIENT_SECRET", ""),
 		GitHubClientID:     envOr("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: envOr("GITHUB_CLIENT_SECRET", ""),
+		CreditClientID:     envOr("CREDIT_CLIENT_ID", ""),
+		CreditClientSecret: envOr("CREDIT_CLIENT_SECRET", ""),
 		GitHubUser:         envOr("GITHUB_USER", ""),
 		GitHubPass:         envOr("GITHUB_PASS", ""),
 		GitHubTOTP:         envOr("GITHUB_TOTP", ""),

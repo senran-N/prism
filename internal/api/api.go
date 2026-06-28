@@ -53,6 +53,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/linuxdo/callback", s.rateLimit(10, time.Minute, s.handleLinuxDoCallback))
 	s.mux.HandleFunc("GET /api/linuxdo/status", s.handleLinuxDoStatus)
 
+	// Credit payment
+	s.mux.HandleFunc("POST /api/credit/pay", s.requireAuth(limitBody(1<<16, s.handleCreditPay)))
+	s.mux.HandleFunc("POST /api/credit/notify", limitBody(1<<16, s.handleCreditNotify))
+	s.mux.HandleFunc("GET /api/credit/callback", s.handleCreditCallback)
+	s.mux.HandleFunc("GET /api/credit/order", s.requireAuth(s.handleCreditQuery))
+
 	// Authenticated user endpoints
 	s.mux.HandleFunc("POST /api/tasks", s.requireAuth(limitBody(1<<20, s.handleCreateTask)))
 	s.mux.HandleFunc("GET /api/tasks/{id}/status", s.requireAuth(s.handleTaskStatus))
