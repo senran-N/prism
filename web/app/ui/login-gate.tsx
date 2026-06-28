@@ -70,8 +70,11 @@ function LoginPage({ urlError }: { urlError?: string | null }) {
     state_expired: isZh ? "登录超时，请重试" : "Login expired, please try again",
     token_exchange: isZh ? "认证失败，请重试" : "Authentication failed, please retry",
     user_fetch: isZh ? "获取用户信息失败" : "Failed to get user info",
-    github_link_failed: isZh ? "GitHub 关联失败" : "GitHub linking failed",
+    github_link_failed: isZh ? "GitHub 关联失败，请重试" : "GitHub linking failed, please retry",
     github_save_failed: isZh ? "GitHub 保存失败" : "GitHub save failed",
+    github_missing_code: isZh ? "GitHub 授权失败" : "GitHub authorization failed",
+    github_token_failed: isZh ? "GitHub 认证失败，请重试" : "GitHub auth failed, please retry",
+    github_user_failed: isZh ? "获取 GitHub 用户信息失败" : "Failed to get GitHub user info",
   };
 
   return (
