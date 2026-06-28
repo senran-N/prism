@@ -68,7 +68,7 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 	// Sign the request
 	sign := signCreditParams(params, s.cfg.CreditClientSecret)
 	params.Set("sign", sign)
-	params.Set("sign_type", "MD5")
+	params.Set("sign_type", "SHA256")
 
 	payURL := creditSubmit + "?" + params.Encode()
 
