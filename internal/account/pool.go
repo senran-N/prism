@@ -38,23 +38,33 @@ type Account struct {
 }
 
 // Pool manages a set of SC accounts and handles automatic rotation.
+// Uses channel-based ready queue for lock-free acquisition.
 type Pool struct {
 	mu       sync.RWMutex
-	accounts map[string]*Account // keyed by Account.ID
-	active   string              // ID of the currently active account
+	accounts map[string]*Account
+	active   string
+	ready    chan *Account // buffered channel for fast acquire
 }
 
 func NewPool() *Pool {
 	return &Pool{
 		accounts: make(map[string]*Account),
+		ready:    make(chan *Account, 50),
 	}
 }
 
-// Add registers an account in the pool.
+// Add registers an account in the pool. If ready, also enqueue.
 func (p *Pool) Add(a *Account) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.accounts[a.ID] = a
+	p.mu.Unlock()
+
+	if a.Status == StatusReady && a.Credits > 0.50 {
+		select {
+		case p.ready <- a:
+		default: // channel full, that's ok
+		}
+	}
 }
 
 // Get returns an account by ID.
@@ -65,12 +75,26 @@ func (p *Pool) Get(id string) (*Account, bool) {
 	return a, ok
 }
 
-// Acquire selects a ready account with sufficient credits for a task.
-// Returns nil if no account is available.
+// Acquire selects a ready account. Fast path via channel (no lock).
 func (p *Pool) Acquire() *Account {
+	// Fast path: try channel (lock-free)
+	select {
+	case a := <-p.ready:
+		if a.Status == StatusReady && a.Credits > 0.50 {
+			p.mu.Lock()
+			a.Status = StatusActive
+			a.LastUsedAt = time.Now()
+			p.active = a.ID
+			p.mu.Unlock()
+			return a
+		}
+		// Account no longer valid, fall through
+	default:
+	}
+
+	// Slow path: scan map
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
 	for _, a := range p.accounts {
 		if a.Status == StatusReady && a.Credits > 0.50 && a.GitHubBound {
 			a.Status = StatusActive

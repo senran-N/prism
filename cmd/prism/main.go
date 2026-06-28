@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/senran-N/prism/internal/account"
 	"github.com/senran-N/prism/internal/api"
@@ -47,6 +48,9 @@ func main() {
 		RepoID:     cfg.RepoID,
 	})
 
+	// Start background pool warmer
+	sched.StartPoolWarmer()
+
 	apiServer := api.New(sched, pool, cfg)
 
 	mux := http.NewServeMux()
@@ -58,6 +62,14 @@ func main() {
 		),
 	)
 
+	server := &http.Server{
+		Addr:           cfg.Addr,
+		Handler:        handler,
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   120 * time.Second, // long for SSE + SC operations
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 16,
+	}
 	log.Printf("Prism starting on %s", cfg.Addr)
-	log.Fatal(http.ListenAndServe(cfg.Addr, handler))
+	log.Fatal(server.ListenAndServe())
 }

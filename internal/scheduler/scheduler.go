@@ -40,15 +40,23 @@ func New(pool *account.Pool, cfg Config) *Scheduler {
 // AcquireAccount returns a ready account. If none available, performs
 // automatic rotation. userID is used for billing (0 = system/free).
 func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
+	// Fast path: try to acquire without lock contention
+	if a := s.pool.Acquire(); a != nil {
+		// Trigger background warm if pool is getting low
+		go s.warmPool()
+		return a, nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Double-check after acquiring lock
 	if a := s.pool.Acquire(); a != nil {
 		return a, nil
 	}
 
 	// Rotation needed — check user billing
-	if userID > 0 {
+	if userID > 0 && db.DB != nil {
 		balance, err := db.GetUserBalance(userID)
 		if err != nil {
 			log.Printf("[scheduler] balance check error: %v", err)
@@ -56,7 +64,6 @@ func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
 			return nil, fmt.Errorf("insufficient balance (%.2f < %.2f), please recharge or redeem a code", balance, db.RotationCost)
 		}
 
-		// Deduct rotation cost
 		if err := db.DeductBalance(userID, db.RotationCost); err != nil {
 			return nil, fmt.Errorf("deduct balance: %w", err)
 		}
