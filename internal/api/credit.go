@@ -67,7 +67,7 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 	for k, v := range params {
 		q.Set(k, v)
 	}
-	payURL := creditBase + "/submit.php?" + q.Encode()
+	payURL := creditBase + "/pay/submit.php?" + q.Encode()
 
 	log.Printf("[credit] order created: %s amount=%.2f user=%d", orderNo, req.Amount, user.ID)
 
