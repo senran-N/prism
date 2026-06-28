@@ -1,6 +1,4 @@
-// Package credit integrates LinuxDo Credit payment system.
-// Docs: https://credit.linux.do
-// Flow: create order → redirect user to pay → notify callback → confirm
+// Package credit integrates LinuxDo Credit payment system (EasyPay compatible).
 package api
 
 import (
@@ -13,15 +11,13 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	creditBase     = "https://credit.linux.do"
-	creditSubmit   = creditBase + "/pay/submit.php"
-	creditQueryAPI = creditBase + "/api.php"
+	creditBase = "https://credit.linux.do"
 )
 
 // ── Create payment order ────────────────────────
@@ -54,23 +50,24 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 		req.Description = "Prism Credits"
 	}
 
-	// Build payment URL
-	params := url.Values{
-		"pid":          {s.cfg.CreditClientID},
-		"type":         {"epay"},
-		"out_trade_no": {orderNo},
-		"notify_url":   {s.cfg.BaseURL + "/api/credit/notify"},
-		"return_url":   {s.cfg.BaseURL + "/api/credit/callback"},
-		"name":         {req.Description},
-		"money":        {fmt.Sprintf("%.2f", req.Amount)},
+	params := map[string]string{
+		"pid":          s.cfg.CreditClientID,
+		"type":         "epay",
+		"out_trade_no": orderNo,
+		"notify_url":   s.cfg.BaseURL + "/api/credit/notify",
+		"return_url":   s.cfg.BaseURL + "/api/credit/callback",
+		"name":         req.Description,
+		"money":        fmt.Sprintf("%.2f", req.Amount),
 	}
 
-	// Sign the request
-	sign := signCreditParams(params, s.cfg.CreditClientSecret)
-	params.Set("sign", sign)
-	params.Set("sign_type", "MD5")
+	params["sign"] = epaySign(params, s.cfg.CreditClientSecret)
+	params["sign_type"] = "MD5"
 
-	payURL := creditSubmit + "?" + params.Encode()
+	q := url.Values{}
+	for k, v := range params {
+		q.Set(k, v)
+	}
+	payURL := creditBase + "/submit.php?" + q.Encode()
 
 	log.Printf("[credit] order created: %s amount=%.2f user=%d", orderNo, req.Amount, user.ID)
 
@@ -84,34 +81,41 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/credit/notify — Credit system pushes payment result
 func (s *Server) handleCreditNotify(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
-	tradeNo := r.FormValue("trade_no")
-	outTradeNo := r.FormValue("out_trade_no")
-	tradeStatus := r.FormValue("trade_status")
-	money := r.FormValue("money")
-	sign := r.FormValue("sign")
-
-	// Verify signature
-	params := url.Values{}
-	for k, v := range r.Form {
-		if k != "sign" && k != "sign_type" {
-			params[k] = v
-		}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		w.Write([]byte("fail"))
+		return
 	}
-	expectedSign := signCreditParams(params, s.cfg.CreditClientSecret)
-	if !hmac.Equal([]byte(sign), []byte(expectedSign)) {
-		log.Printf("[credit] notify: invalid signature for order %s", outTradeNo)
+
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		w.Write([]byte("fail"))
+		return
+	}
+
+	params := make(map[string]string)
+	for k := range values {
+		params[k] = values.Get(k)
+	}
+
+	sign := params["sign"]
+	if sign == "" {
+		log.Printf("[credit] notify: missing sign")
+		w.Write([]byte("fail"))
+		return
+	}
+
+	if !epayVerifySign(params, s.cfg.CreditClientSecret, sign) {
+		log.Printf("[credit] notify: invalid signature for order %s", params["out_trade_no"])
 		w.Write([]byte("fail"))
 		return
 	}
 
 	log.Printf("[credit] notify: order=%s trade=%s status=%s amount=%s",
-		outTradeNo, tradeNo, tradeStatus, money)
+		params["out_trade_no"], params["trade_no"], params["trade_status"], params["money"])
 
-	if tradeStatus == "TRADE_SUCCESS" {
-		amount, _ := strconv.ParseFloat(money, 64)
-		log.Printf("[credit] payment success: order=%s amount=%.2f", outTradeNo, amount)
+	if params["trade_status"] == "TRADE_SUCCESS" {
+		log.Printf("[credit] payment success: order=%s amount=%s", params["out_trade_no"], params["money"])
 		// TODO: credit user account based on outTradeNo prefix "PRISM-{userID}-..."
 	}
 
@@ -150,43 +154,41 @@ func (s *Server) handleCreditQuery(w http.ResponseWriter, r *http.Request) {
 		"out_trade_no": {orderNo},
 	}
 
-	resp, err := http.Get(creditQueryAPI + "?" + params.Encode())
+	resp, err := http.Get(creditBase + "/api.php?" + params.Encode())
 	if err != nil {
 		writeError(w, 502, "query failed")
 		return
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	w.Write(respBody)
 }
 
-// ── Signature ───────────────────────────────────
+// ── EasyPay signing (identical to sub2api) ──────
 
-func signCreditParams(params url.Values, secret string) string {
-	// Sort keys alphabetically, concatenate k=v with &, append key
+func epaySign(params map[string]string, pkey string) string {
 	keys := make([]string, 0, len(params))
-	for k := range params {
-		if k != "sign" && k != "sign_type" && params.Get(k) != "" {
-			keys = append(keys, k)
+	for k, v := range params {
+		if k == "sign" || k == "sign_type" || v == "" {
+			continue
 		}
+		keys = append(keys, k)
 	}
-	// Simple sort
-	for i := 0; i < len(keys); i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[i] > keys[j] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
-
-	parts := make([]string, len(keys))
+	sort.Strings(keys)
+	var buf strings.Builder
 	for i, k := range keys {
-		parts[i] = k + "=" + params.Get(k)
+		if i > 0 {
+			buf.WriteByte('&')
+		}
+		buf.WriteString(k + "=" + params[k])
 	}
-	str := strings.Join(parts, "&") + secret
-
-	hash := md5.Sum([]byte(str))
+	buf.WriteString(pkey)
+	hash := md5.Sum([]byte(buf.String()))
 	return hex.EncodeToString(hash[:])
+}
+
+func epayVerifySign(params map[string]string, pkey string, sign string) bool {
+	return hmac.Equal([]byte(epaySign(params, pkey)), []byte(sign))
 }
