@@ -103,7 +103,7 @@ func (s *Server) handleCreditRedirect(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Redirecting to payment...</title>
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f9fc;color:#697386;}</style>
 </head><body><div style="text-align:center"><p>Redirecting to LinuxDo Credit...</p><noscript>Please enable JavaScript</noscript></div>
-<form id="f" method="POST" action="%s">`, creditBase+"/pay/submit.php")
+<form id="f" method="POST" action="%s">`, creditBase+"/epay/pay/submit.php")
 
 	for k, v := range params {
 		fmt.Fprintf(w, `<input type="hidden" name="%s" value="%s">`, k, v)
