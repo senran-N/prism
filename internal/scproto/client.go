@@ -462,10 +462,14 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("no CSRF on env edit page")
 	}
 
-	// Extract the repo name from the setup command textarea
-	repoName := projectID // fallback
+	// Extract the repo name from the page heading ("{name} Project Development Environment")
+	// or from the setup command textarea as fallback
+	repoName := projectID
+	rePageTitle := regexp.MustCompile(`([A-Za-z0-9_.-]+)\s+Project Development Environment`)
 	reSetupCmd := regexp.MustCompile(`cd /workspace/([^\s\n]+)`)
-	if m := reSetupCmd.FindStringSubmatch(html); m != nil {
+	if m := rePageTitle.FindStringSubmatch(html); m != nil {
+		repoName = m[1]
+	} else if m := reSetupCmd.FindStringSubmatch(html); m != nil {
 		repoName = m[1]
 	}
 
@@ -504,29 +508,6 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("save env config: %w", err)
 	}
 	log.Printf("[scproto] environment saved: status=%d url=%s", status, finalURL)
-
-	// Trigger a snapshot build — without this, the environment won't be
-	// provisioned and tickets fail with "Failed to get the current diff".
-	log.Printf("[scproto] triggering snapshot build...")
-	buildHTML, err := c.get(editURL)
-	if err != nil {
-		return fmt.Errorf("get page for build csrf: %w", err)
-	}
-	buildCSRF := extractCSRF(buildHTML)
-	_, _, buildStatus, err := c.post(
-		scBase+"/projects/"+projectID+"/snapshots",
-		url.Values{"authenticity_token": {buildCSRF}},
-		map[string]string{
-			"X-CSRF-Token": buildCSRF,
-			"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
-		},
-	)
-	if err != nil {
-		log.Printf("[scproto] snapshot build trigger warning: %v", err)
-	} else {
-		log.Printf("[scproto] snapshot build triggered: status=%d", buildStatus)
-	}
-
 	return nil
 }
 
