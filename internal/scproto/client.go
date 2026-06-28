@@ -447,64 +447,64 @@ func (c *Client) CreateProject(repoID string) (projectID string, err error) {
 
 // ── Environment Setup ──────────────────────────────────────
 
-// CompleteEnvironmentSetup finds and confirms any pending environment
-// setup for a project so that tickets can run immediately.
+// CompleteEnvironmentSetup saves the environment configuration via the
+// "Configure Manually" form, bypassing the AI-assisted setup conversation
+// which can get stuck on simple repositories.
 func (c *Client) CompleteEnvironmentSetup(projectID string) error {
-	html, err := c.get(scBase + "/projects/" + projectID)
+	editURL := scBase + "/projects/" + projectID + "/environment/edit"
+	html, err := c.get(editURL)
 	if err != nil {
-		return fmt.Errorf("get project: %w", err)
+		return fmt.Errorf("get env edit page: %w", err)
 	}
 
-	m := reEnvSetup.FindStringSubmatch(html)
-	if m == nil {
-		log.Printf("[scproto] no pending environment setup for project %s", projectID)
-		return nil
-	}
-	setupID := m[1]
-	setupURL := fmt.Sprintf("%s/projects/%s/environment_setups/%s", scBase, projectID, setupID)
-
-	log.Printf("[scproto] completing environment setup %s", setupID)
-
-	setupHTML, err := c.get(setupURL)
-	if err != nil {
-		return fmt.Errorf("get env setup: %w", err)
-	}
-
-	csrf := extractCSRF(setupHTML)
+	csrf := extractCSRF(html)
 	if csrf == "" {
-		return fmt.Errorf("no CSRF on env setup page")
+		return fmt.Errorf("no CSRF on env edit page")
 	}
 
-	// SC environment setup works via a conversation — it sends a message
-	// asking about setup instructions and waits for a reply.
-	// Find the conversation form and reply to confirm.
-	convRe := regexp.MustCompile(`/conversations/([A-Za-z0-9]+)/messages`)
-	cm := convRe.FindStringSubmatch(setupHTML)
-	if cm == nil {
-		log.Printf("[scproto] no conversation form on env setup page, skipping")
-		return nil
+	// Extract the repo name from the setup command textarea
+	repoName := projectID // fallback
+	reSetupCmd := regexp.MustCompile(`cd /workspace/([^\s\n]+)`)
+	if m := reSetupCmd.FindStringSubmatch(html); m != nil {
+		repoName = m[1]
 	}
-	convURL := scBase + cm[0]
+
+	log.Printf("[scproto] saving environment config for project %s (repo: %s)", projectID, repoName)
 
 	data := url.Values{
-		"authenticity_token":                      {csrf},
-		"message[messageable_type]":               {"ChatMessage"},
-		"message[shell_mode]":                     {"false"},
-		"message[messageable_attributes][content]": {"Confirm. No special setup instructions needed."},
-		"button": {""},
+		"_method":            {"patch"},
+		"authenticity_token": {csrf},
+		// Resources
+		"project[infrastructure_config][vcpus]":     {"2"},
+		"project[infrastructure_config][memory]":    {"4096"},
+		"project[infrastructure_config][disk_size]": {"10240"},
+		// No packages needed for basic ticket execution
+		"project[packages][docker][enabled]": {"0"},
+		"project[packages][node][enabled]":   {"0"},
+		"project[packages][python][enabled]": {"0"},
+		"project[packages][ruby][enabled]":   {"0"},
+		// Minimal setup command
+		"project[setup_commands][]": {"cd /workspace/" + repoName},
+		// No startup command needed
+		"project[startup_commands][][command]":           {""},
+		"project[startup_commands][][run_in_background]": {"1"},
+		// Submit
+		"commit": {"Save Development Environment"},
 	}
 
-	log.Printf("[scproto] env setup: replying to conversation %s", cm[1])
-
-	_, finalURL, status, err := c.post(convURL, data, map[string]string{
-		"X-CSRF-Token": csrf,
-		"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
-	})
+	_, finalURL, status, err := c.post(
+		scBase+"/projects/"+projectID+"/environment",
+		data,
+		map[string]string{
+			"X-CSRF-Token": csrf,
+			"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
+		},
+	)
 	if err != nil {
-		return fmt.Errorf("reply env setup: %w", err)
+		return fmt.Errorf("save env config: %w", err)
 	}
 
-	log.Printf("[scproto] env setup reply sent: status=%d url=%s", status, finalURL)
+	log.Printf("[scproto] environment saved: status=%d url=%s", status, finalURL)
 	return nil
 }
 
