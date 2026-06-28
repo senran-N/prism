@@ -13,11 +13,17 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	creditBase = "https://credit.linux.do"
+)
+
+var (
+	creditOrders   = make(map[string]map[string]string)
+	creditOrdersMu sync.Mutex
 )
 
 // ── Create payment order ────────────────────────
@@ -63,14 +69,47 @@ func (s *Server) handleCreditPay(w http.ResponseWriter, r *http.Request) {
 	params["sign"] = epaySign(params, s.cfg.CreditClientSecret)
 	params["sign_type"] = "MD5"
 
-	log.Printf("[credit] order created: %s amount=%.2f user=%d", orderNo, req.Amount, user.ID)
+	log.Printf("[credit] order created: %s amount=%.2f user=%d sign=%s", orderNo, req.Amount, user.ID, params["sign"])
 
-	// Return form data for POST submission (avoids Cloudflare GET blocking)
-	writeJSON(w, map[string]any{
-		"order_no":   orderNo,
-		"action_url": creditBase + "/pay/submit.php",
-		"params":     params,
+	writeJSON(w, map[string]string{
+		"order_no": orderNo,
+		"pay_url":  "/api/credit/redirect?order=" + orderNo,
 	})
+
+	// Cache params for the redirect page
+	creditOrdersMu.Lock()
+	creditOrders[orderNo] = params
+	creditOrdersMu.Unlock()
+}
+
+// GET /api/credit/redirect?order=xxx — self-hosted page that auto-POSTs to credit
+func (s *Server) handleCreditRedirect(w http.ResponseWriter, r *http.Request) {
+	orderNo := r.URL.Query().Get("order")
+
+	creditOrdersMu.Lock()
+	params, ok := creditOrders[orderNo]
+	if ok {
+		delete(creditOrders, orderNo) // one-time use
+	}
+	creditOrdersMu.Unlock()
+
+	if !ok {
+		http.Error(w, "order not found or expired", 404)
+		return
+	}
+
+	// Render auto-submit form page
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Redirecting to payment...</title>
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f9fc;color:#697386;}</style>
+</head><body><div style="text-align:center"><p>Redirecting to LinuxDo Credit...</p><noscript>Please enable JavaScript</noscript></div>
+<form id="f" method="POST" action="%s">`, creditBase+"/pay/submit.php")
+
+	for k, v := range params {
+		fmt.Fprintf(w, `<input type="hidden" name="%s" value="%s">`, k, v)
+	}
+
+	fmt.Fprint(w, `</form><script>document.getElementById("f").submit();</script></body></html>`)
 }
 
 // ── Payment notify (server-to-server) ───────────

@@ -110,6 +110,8 @@ export default function RedeemPanel() {
         </h3>
         <button
           onClick={async () => {
+            // Step 1: ensure user is logged into credit.linux.do by opening it
+            // Step 2: create order and redirect
             const res = await fetch("/api/credit/pay", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -117,20 +119,10 @@ export default function RedeemPanel() {
             });
             if (res.ok) {
               const data = await res.json();
-              if (data.action_url && data.params) {
-                // POST form submit to avoid Cloudflare blocking
-                const form = document.createElement("form");
-                form.method = "POST";
-                form.action = data.action_url;
-                for (const [k, v] of Object.entries(data.params as Record<string, string>)) {
-                  const input = document.createElement("input");
-                  input.type = "hidden";
-                  input.name = k;
-                  input.value = v;
-                  form.appendChild(input);
-                }
-                document.body.appendChild(form);
-                form.submit();
+              if (data.pay_url) {
+                window.location.href = data.pay_url;
+              } else {
+                setMessage({ type: "error", text: "Payment service error" });
               }
             } else {
               const err = await res.json().catch(() => ({ error: "Payment failed" }));

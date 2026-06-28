@@ -65,6 +65,7 @@ func (s *Server) routes() {
 
 	// Credit payment
 	s.mux.HandleFunc("POST /api/credit/pay", s.requireAuth(limitBody(1<<16, s.handleCreditPay)))
+	s.mux.HandleFunc("GET /api/credit/redirect", s.handleCreditRedirect)
 	s.mux.HandleFunc("POST /api/credit/notify", limitBody(1<<16, s.handleCreditNotify))
 	s.mux.HandleFunc("GET /api/credit/callback", s.handleCreditCallback)
 	s.mux.HandleFunc("GET /api/credit/order", s.requireAuth(s.handleCreditQuery))
