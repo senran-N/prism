@@ -210,13 +210,13 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// Create ticket
 	ticketID, err := acct.Client.CreateTicket(acct.ProjectID, req.Description, req.Model)
 	if err != nil {
-		s.scheduler.ReleaseAccount(acct.ID, false)
+		s.scheduler.ReleaseAccount(acct)
 		writeError(w, 500, "create ticket failed: "+err.Error())
 		return
 	}
 
-	// Release account back to pool and deduct estimated credits
-	s.scheduler.ReleaseAccount(acct.ID, true)
+	// Release account — checks actual SC credits, auto-exhausts if empty
+	s.scheduler.ReleaseAccount(acct)
 
 	// Map ticket to account so proxy can use the right session
 	s.pool.MapTicket(ticketID, acct.ID)

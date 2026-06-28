@@ -1,5 +1,5 @@
 // Package scheduler orchestrates account rotation and task dispatch.
-// When credits run out, it transparently provisions a new account.
+// One account at a time. Use it until credits run out, then rotate.
 package scheduler
 
 import (
@@ -15,15 +15,13 @@ import (
 	"github.com/senran-N/prism/internal/scproto"
 )
 
-const EstimatedTaskCost = 2.0 // conservative per-task credit estimate
-
 type Config struct {
 	YYDSAPIKey     string
 	GitHubUser     string
 	GitHubPass     string
 	GitHubTOTP     string
 	RepoID         string
-	InitialCredits float64 // default 20.0
+	InitialCredits float64
 }
 
 type Scheduler struct {
@@ -39,8 +37,7 @@ func New(pool *account.Pool, cfg Config) *Scheduler {
 	return &Scheduler{pool: pool, cfg: cfg}
 }
 
-// AcquireAccount returns a ready account. If none available, performs
-// automatic rotation. userID is used for billing (0 = system/free).
+// AcquireAccount returns the current account, or rotates if exhausted.
 func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
 	if a := s.pool.Acquire(); a != nil {
 		return a, nil
@@ -49,27 +46,25 @@ func (s *Scheduler) AcquireAccount(userID int64) (*account.Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Double-check after acquiring lock
 	if a := s.pool.Acquire(); a != nil {
 		return a, nil
 	}
 
-	// Rotation needed — check user billing
+	// Rotation needed
 	if userID > 0 && db.DB != nil {
 		balance, err := db.GetUserBalance(userID)
 		if err != nil {
 			log.Printf("[scheduler] balance check error: %v", err)
 		} else if balance < db.RotationCost {
-			return nil, fmt.Errorf("insufficient balance (%.2f < %.2f), please recharge or redeem a code", balance, db.RotationCost)
+			return nil, fmt.Errorf("insufficient balance (%.2f < %.2f), please recharge", balance, db.RotationCost)
 		}
-
 		if err := db.DeductBalance(userID, db.RotationCost); err != nil {
 			return nil, fmt.Errorf("deduct balance: %w", err)
 		}
 		log.Printf("[scheduler] deducted %.2f from user %d for rotation", db.RotationCost, userID)
 	}
 
-	log.Println("[scheduler] no ready accounts, starting rotation...")
+	log.Println("[scheduler] rotating to new account...")
 	return s.rotate(userID)
 }
 
@@ -83,13 +78,11 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		old.GitHubBound = false
 	}
 
-	log.Println("[scheduler] logging into GitHub...")
 	ghClient, err := github.Login(s.cfg.GitHubUser, s.cfg.GitHubPass, s.cfg.GitHubTOTP)
 	if err != nil {
 		return nil, fmt.Errorf("github login: %w", err)
 	}
 
-	log.Println("[scheduler] creating temp email...")
 	prefix := fmt.Sprintf("prism-%d", time.Now().Unix())
 	emailAddr, _, err := mail.CreateTempEmail(s.cfg.YYDSAPIKey, prefix)
 	if err != nil {
@@ -103,31 +96,33 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		fp, err := db.GetLatestFingerprint(userID)
 		if err == nil && fp != nil && fp.UserAgent != "" {
 			sc.SetFingerprint(scproto.FingerprintFromUser(fp.UserAgent, fp.Language, fp.Platform))
-			log.Printf("[scheduler] using user %d fingerprint for registration", userID)
 		}
 	}
-	log.Printf("[scheduler] registering SC: %s", emailAddr)
+
 	if err := sc.Register(emailAddr, password, "Prism User"); err != nil {
 		return nil, fmt.Errorf("sc register: %w", err)
 	}
-
-	log.Println("[scheduler] connecting GitHub OAuth...")
 	if err := sc.ConnectGitHub(ghClient); err != nil {
 		return nil, fmt.Errorf("sc oauth: %w", err)
 	}
 
-	log.Println("[scheduler] creating project...")
 	projectID, err := sc.CreateProject(s.cfg.RepoID)
 	if err != nil {
 		return nil, fmt.Errorf("sc project: %w", err)
 	}
 
-	log.Println("[scheduler] completing environment setup...")
 	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
 		log.Printf("[scheduler] env setup warning: %v", err)
 	}
 	if err := sc.WaitForEnvironment(projectID, 60*time.Second); err != nil {
 		log.Printf("[scheduler] env wait warning: %v", err)
+	}
+
+	// Try to get actual credits from SC
+	credits := s.cfg.InitialCredits
+	if actual, err := sc.GetCredits(); err == nil && actual > 0 {
+		credits = actual
+		log.Printf("[scheduler] SC reports $%.2f credits", credits)
 	}
 
 	newAcct := &account.Account{
@@ -138,7 +133,7 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		UserID:      sc.UserID,
 		ProjectID:   projectID,
 		RepoID:      s.cfg.RepoID,
-		Credits:     s.cfg.InitialCredits,
+		Credits:     credits,
 		Status:      account.StatusActive,
 		GitHubBound: true,
 		CreatedAt:   time.Now(),
@@ -147,19 +142,22 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 	}
 	s.pool.Add(newAcct)
 
-	log.Printf("[scheduler] new account ready: %s ($%.2f)", emailAddr, newAcct.Credits)
+	log.Printf("[scheduler] new account ready: %s ($%.2f)", emailAddr, credits)
 	return newAcct, nil
 }
 
-// ReleaseAccount returns the account to the pool and deducts estimated cost.
-func (s *Scheduler) ReleaseAccount(id string, deductCredits bool) {
-	if deductCredits {
-		s.pool.DeductCredits(id, EstimatedTaskCost)
+// ReleaseAccount returns the account and syncs credits from SC.
+func (s *Scheduler) ReleaseAccount(acct *account.Account) {
+	if acct.Client != nil {
+		if actual, err := acct.Client.GetCredits(); err == nil && actual >= 0 {
+			log.Printf("[scheduler] SC credits for %s: $%.2f", acct.Email, actual)
+			if actual < 0.50 {
+				s.pool.MarkExhausted(acct.ID)
+				log.Printf("[scheduler] account %s exhausted, will rotate next task", acct.Email)
+			} else {
+				acct.Credits = actual
+			}
+		}
 	}
-	s.pool.Release(id)
-}
-
-// RecordUsage deducts cost and checks if rotation is needed.
-func (s *Scheduler) RecordUsage(id string, cost float64) {
-	s.pool.DeductCredits(id, cost)
+	s.pool.Release(acct.ID)
 }

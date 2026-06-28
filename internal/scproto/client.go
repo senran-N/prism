@@ -15,6 +15,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -514,6 +515,44 @@ func (c *Client) WaitForEnvironment(projectID string, timeout time.Duration) err
 		time.Sleep(10 * time.Second)
 	}
 	return fmt.Errorf("environment setup timed out after %s", timeout)
+}
+
+// ── Credits ────────────────────────────────────────────────
+
+var reCredits = regexp.MustCompile(`\$(\d+\.?\d*)`)
+
+// GetCredits fetches the account's remaining SC credits by checking the
+// credential usage turbo-frame endpoints.
+func (c *Client) GetCredits() (float64, error) {
+	for _, path := range []string{
+		"/account/claude_credential/usage",
+		"/account/openai_credential/usage",
+	} {
+		html, err := c.get(scBase + path)
+		if err != nil {
+			continue
+		}
+		if m := reCredits.FindStringSubmatch(html); m != nil {
+			val, err := strconv.ParseFloat(m[1], 64)
+			if err == nil {
+				log.Printf("[scproto] credits from %s: $%.2f", path, val)
+				return val, nil
+			}
+		}
+	}
+
+	// Fallback: check the account page
+	html, err := c.get(scBase + "/account")
+	if err != nil {
+		return -1, err
+	}
+	if m := reCredits.FindStringSubmatch(html); m != nil {
+		val, _ := strconv.ParseFloat(m[1], 64)
+		log.Printf("[scproto] credits from /account: $%.2f", val)
+		return val, nil
+	}
+
+	return -1, fmt.Errorf("could not determine credits")
 }
 
 // ── Ticket ──────────────────────────────────────────────────
