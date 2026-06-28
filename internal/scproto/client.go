@@ -470,56 +470,41 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("get env setup: %w", err)
 	}
 
-	// Log page structure to understand what SC expects
-	// Find all form actions on the page
-	formRe := regexp.MustCompile(`<form[^>]*action="([^"]*)"[^>]*`)
-	for _, fm := range formRe.FindAllStringSubmatch(setupHTML, -1) {
-		log.Printf("[scproto] env setup page form action: %s", fm[1])
-	}
-	// Log a snippet around "environment_setup" or "confirm" or "setup"
-	for _, keyword := range []string{"environment_setup", "setup_instruction", "Confirm", "Save", "submit"} {
-		idx := strings.Index(strings.ToLower(setupHTML), strings.ToLower(keyword))
-		if idx >= 0 {
-			start := max(0, idx-80)
-			end := min(len(setupHTML), idx+80)
-			log.Printf("[scproto] env page near '%s': ...%s...", keyword, setupHTML[start:end])
-		}
-	}
-
 	csrf := extractCSRF(setupHTML)
 	if csrf == "" {
 		return fmt.Errorf("no CSRF on env setup page")
 	}
 
-	// Try the environment setup-specific form action if it exists
-	setupFormRe := regexp.MustCompile(`<form[^>]*action="([^"]*environment_setup[^"]*)"`)
-	formAction := setupURL
-	if m := setupFormRe.FindStringSubmatch(setupHTML); m != nil {
-		if strings.HasPrefix(m[1], "/") {
-			formAction = scBase + m[1]
-		} else {
-			formAction = m[1]
-		}
-		log.Printf("[scproto] using env setup form action: %s", formAction)
+	// SC environment setup works via a conversation — it sends a message
+	// asking about setup instructions and waits for a reply.
+	// Find the conversation form and reply to confirm.
+	convRe := regexp.MustCompile(`/conversations/([A-Za-z0-9]+)/messages`)
+	cm := convRe.FindStringSubmatch(setupHTML)
+	if cm == nil {
+		log.Printf("[scproto] no conversation form on env setup page, skipping")
+		return nil
 	}
+	convURL := scBase + cm[0]
 
 	data := url.Values{
-		"authenticity_token": {csrf},
-		"_method":            {"patch"},
-		"commit":             {"Confirm"},
+		"authenticity_token":                      {csrf},
+		"message[messageable_type]":               {"ChatMessage"},
+		"message[shell_mode]":                     {"false"},
+		"message[messageable_attributes][content]": {"Confirm. No special setup instructions needed."},
+		"button": {""},
 	}
 
-	log.Printf("[scproto] env setup POST: %s", formAction)
+	log.Printf("[scproto] env setup: replying to conversation %s", cm[1])
 
-	_, finalURL, status, err := c.post(formAction, data, map[string]string{
+	_, finalURL, status, err := c.post(convURL, data, map[string]string{
 		"X-CSRF-Token": csrf,
 		"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
 	})
 	if err != nil {
-		return fmt.Errorf("submit env setup: %w", err)
+		return fmt.Errorf("reply env setup: %w", err)
 	}
 
-	log.Printf("[scproto] env setup confirmed: status=%d url=%s", status, finalURL)
+	log.Printf("[scproto] env setup reply sent: status=%d url=%s", status, finalURL)
 	return nil
 }
 
