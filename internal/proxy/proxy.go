@@ -1,10 +1,10 @@
 package proxy
 
 import (
-	"io"
+	"fmt"
 	"net/http"
+	"net/url"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/senran-N/prism/internal/account"
@@ -20,82 +20,64 @@ func New(pool *account.Pool) *Handler {
 	return &Handler{pool: pool}
 }
 
+// ServeHTTP generates a self-login page that logs into SC and redirects
+// to the ticket/implementation page. User's browser gets SC session cookies
+// directly so they can interact with the full SC interface.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	targetPath := strings.TrimPrefix(r.URL.Path, "/proxy")
 	targetPath = path.Clean(targetPath)
-	if strings.Contains(targetPath, "..") {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-	if !strings.HasPrefix(targetPath, "/tickets/") {
+	if strings.Contains(targetPath, "..") || !strings.HasPrefix(targetPath, "/tickets/") {
 		http.Error(w, "forbidden", 403)
 		return
 	}
 
-	// Extract ticket ID from path
 	parts := strings.SplitN(strings.TrimPrefix(targetPath, "/tickets/"), "/", 2)
 	ticketID := parts[0]
 
-	// Find the account that created this ticket
-	var client *http.Client
-	if acct := h.pool.GetTicketAccount(ticketID); acct != nil && acct.Client != nil {
-		client = acct.Client.HTTPClient()
-	}
-	// Fallback: try any account
-	if client == nil {
-		for _, acct := range h.pool.ListAll() {
-			if acct.Client != nil && acct.Client.HTTPClient() != nil {
-				client = acct.Client.HTTPClient()
+	// Find the SC account that created this ticket
+	acct := h.pool.GetTicketAccount(ticketID)
+	if acct == nil {
+		for _, a := range h.pool.ListAll() {
+			if a.Email != "" && a.Password != "" {
+				acct = a
 				break
 			}
 		}
 	}
-	if client == nil {
-		http.Error(w, "no available account", 503)
+	if acct == nil {
+		http.Error(w, "no account available", 503)
 		return
 	}
 
-	// If path is just /tickets/{id}, find the implementation first
-	targetURL := scBase + targetPath
-	if matched, _ := regexp.MatchString(`^/tickets/[A-Za-z0-9]+$`, targetPath); matched {
-		// Fetch ticket page to find implementation ID
-		implReq, _ := http.NewRequest("GET", targetURL, nil)
-		implReq.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
-		implResp, err := client.Do(implReq)
-		if err == nil {
-			body, _ := io.ReadAll(implResp.Body)
-			implResp.Body.Close()
-			implRe := regexp.MustCompile(targetPath + `/implementations/([A-Za-z0-9]+)`)
-			if m := implRe.FindStringSubmatch(string(body)); m != nil {
-				targetURL = scBase + targetPath + "/implementations/" + m[1]
-			}
-		}
-	}
-
-	req, err := http.NewRequest("GET", targetURL, nil)
-	if err != nil {
-		http.Error(w, "bad request", 400)
-		return
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, "upstream error", 502)
-		return
-	}
-	defer resp.Body.Close()
-
-	for k, vv := range resp.Header {
-		lower := strings.ToLower(k)
-		if lower == "set-cookie" || lower == "x-frame-options" || lower == "content-security-policy" {
-			continue
-		}
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	// Render an auto-login page: logs into SC, then redirects to ticket
+	targetURL := scBase + "/tickets/" + ticketID
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Opening workspace...</title>
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f9fc;color:#697386;flex-direction:column;gap:12px;}
+.spinner{width:24px;height:24px;border:3px solid #e3e8ee;border-top-color:#635bff;border-radius:50%%;animation:spin 0.8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div class="spinner"></div>
+<p>正在打开工作台 / Opening workspace...</p>
+<form id="f" method="POST" action="%s/log_in">
+<input type="hidden" name="email" value="%s">
+<input type="hidden" name="password" value="%s">
+<input type="hidden" name="commit" value="Log In">
+</form>
+<script>
+// Submit login form, then redirect to ticket
+var f = document.getElementById("f");
+var xhr = new XMLHttpRequest();
+xhr.open("POST", "%s/log_in", true);
+xhr.withCredentials = true;
+xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+xhr.onload = function() { window.location.href = "%s"; };
+xhr.onerror = function() { window.location.href = "%s"; };
+var data = "email=%s&password=%s&commit=Log+In";
+xhr.send(data);
+</script></body></html>`,
+		scBase, acct.Email, acct.Password,
+		scBase, targetURL, targetURL,
+		url.QueryEscape(acct.Email), url.QueryEscape(acct.Password))
 }
