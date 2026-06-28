@@ -30,13 +30,8 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user := s.getSessionUser(r)
-		if user == nil {
-			writeError(w, 401, "authentication required")
-			return
-		}
-		if !user.IsAdmin {
-			writeError(w, 403, "admin access required")
+		if !s.isAdminSession(r) {
+			writeError(w, 401, "admin authentication required")
 			return
 		}
 		next(w, r)

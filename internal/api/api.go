@@ -74,6 +74,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/tasks/history", s.requireAuth(s.handleTaskHistory))
 	s.mux.HandleFunc("GET /api/events", s.requireAuth(s.handleSSE))
 
+	// Admin auth (public)
+	s.mux.HandleFunc("POST /api/admin/login", s.rateLimit(5, time.Minute, limitBody(1<<10, s.handleAdminLogin)))
+	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
+	s.mux.HandleFunc("GET /api/admin/check", s.handleAdminCheck)
+
 	// Admin only
 	s.mux.HandleFunc("GET /api/admin/stats", s.requireAdmin(s.handleAdminStats))
 	s.mux.HandleFunc("GET /api/admin/accounts", s.requireAdmin(s.handleAdminAccounts))

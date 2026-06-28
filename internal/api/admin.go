@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -12,6 +13,66 @@ import (
 )
 
 var startedAt = time.Now()
+
+const adminSessionCookie = "prism_admin"
+
+// POST /api/admin/login
+func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request")
+		return
+	}
+
+	if req.Username != s.cfg.AdminUser || req.Password != s.cfg.AdminPass {
+		time.Sleep(time.Duration(500+rand.Intn(1000)) * time.Millisecond)
+		writeError(w, 401, "invalid credentials")
+		return
+	}
+
+	// Set admin session cookie
+	value := signSession(s.cfg.SessionSecret, -1) // -1 = admin
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookie,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isHTTPS(s.cfg.BaseURL),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400,
+	})
+
+	log.Printf("[admin] login success from %s", clientIP(r))
+	writeJSON(w, map[string]bool{"success": true})
+}
+
+// POST /api/admin/logout
+func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   adminSessionCookie,
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+	writeJSON(w, map[string]bool{"logged_out": true})
+}
+
+// GET /api/admin/check — verify admin session
+func (s *Server) handleAdminCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]bool{"authenticated": s.isAdminSession(r)})
+}
+
+func (s *Server) isAdminSession(r *http.Request) bool {
+	cookie, err := r.Cookie(adminSessionCookie)
+	if err != nil {
+		return false
+	}
+	userID, ok := verifySession(s.cfg.SessionSecret, cookie.Value)
+	return ok && userID == -1
+}
 
 // GET /api/admin/stats
 func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {

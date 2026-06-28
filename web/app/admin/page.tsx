@@ -11,10 +11,20 @@ interface TaskRow { id: string; ticket_id: string; description: string; model: s
 interface UserRow { id: number; github_login: string; avatar_url: string; selected_repo: string; linuxdo_username: string; linuxdo_name: string; trust_level: number; is_banned: boolean; ban_reason: string; created_at: string; task_count: number; }
 interface Config { github_user: string; github_pass: string; github_totp: string; yyds_api_key: string; repo_id: string; github_client_id: string; base_url: string; }
 
-type Tab = "overview" | "accounts" | "tasks" | "users" | "config";
+type Tab = "overview" | "accounts" | "tasks" | "users" | "codes" | "config";
 
 export default function AdminPage() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
+
+  useEffect(() => {
+    fetch("/api/admin/check").then(r => r.json()).then(d => setAuthenticated(d.authenticated)).finally(() => setChecking(false));
+  }, []);
+
+  if (checking) return <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center"><span className="w-6 h-6 border-2 border-[#e3e8ee] border-t-[#635bff] rounded-full animate-spin" /></div>;
+
+  if (!authenticated) return <AdminLogin onSuccess={() => setAuthenticated(true)} />;
 
   return (
     <div className="min-h-screen bg-[#f6f9fc]">
@@ -32,12 +42,15 @@ export default function AdminPage() {
           </a>
           <span className="text-[12px] text-[#8792a2] border border-[#e3e8ee] rounded px-1.5 py-0.5">Admin</span>
         </div>
-        <a href="/" className="text-[13px] text-[#697386] hover:text-[#0a2540]">← Back to app</a>
+        <div className="flex items-center gap-3">
+          <a href="/" className="text-[13px] text-[#697386] hover:text-[#0a2540]">← Back to app</a>
+          <button onClick={async () => { await fetch("/api/admin/logout", { method: "POST" }); setAuthenticated(false); }} className="text-[12px] text-[#df1b41] hover:text-[#ff4d6a]">Logout</button>
+        </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-6">
         <nav className="flex gap-1 mb-6 bg-white rounded-lg border border-[#e3e8ee] p-1" style={{ boxShadow: "var(--shadow-sm)" }}>
-          {(["overview", "accounts", "tasks", "users", "config"] as Tab[]).map(t => (
+          {(["overview", "accounts", "tasks", "users", "codes", "config"] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 rounded-md text-[13px] font-medium capitalize transition-colors ${tab === t ? "bg-[#635bff] text-white" : "text-[#697386] hover:text-[#0a2540] hover:bg-[#f6f9fc]"}`}>
               {t}
             </button>
@@ -48,6 +61,7 @@ export default function AdminPage() {
         {tab === "accounts" && <AccountsTab />}
         {tab === "tasks" && <TasksTab />}
         {tab === "users" && <UsersTab />}
+        {tab === "codes" && <CodesTab />}
         {tab === "config" && <ConfigTab />}
       </div>
     </div>
@@ -316,6 +330,161 @@ function ConfigTab() {
             {saving ? "Saving..." : saved ? "✓ Saved" : "Save Configuration"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CodesTab() {
+  const [codes, setCodes] = useState<{id:number; code:string; rotations:number; used_count:number; max_uses:number; created_at:string; expires_at:string|null}[]>([]);
+  const [form, setForm] = useState({ rotations: 1, max_uses: 1, count: 1, expires_in: "7d" });
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => { fetch("/api/admin/codes").then(r => r.json()).then(d => setCodes(Array.isArray(d) ? d : [])); }, []);
+
+  async function handleGenerate() {
+    setGenerating(true);
+    const res = await fetch("/api/admin/codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    if (res.ok) {
+      const newCodes = await res.json();
+      setCodes(prev => [...(Array.isArray(newCodes) ? newCodes : []), ...prev]);
+    }
+    setGenerating(false);
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Generate form */}
+      <div className="bg-white rounded-lg border border-[#e3e8ee] p-6" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <h3 className="text-[14px] font-semibold text-[#0a2540] mb-4">Generate Codes</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Rotations per code</label>
+            <input type="number" min={1} value={form.rotations} onChange={e => setForm({...form, rotations: +e.target.value})}
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+            <p className="text-[11px] text-[#8792a2] mt-1">Each rotation = 20 credits</p>
+          </div>
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Max uses per code</label>
+            <input type="number" min={1} value={form.max_uses} onChange={e => setForm({...form, max_uses: +e.target.value})}
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+          </div>
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Number of codes</label>
+            <input type="number" min={1} max={100} value={form.count} onChange={e => setForm({...form, count: +e.target.value})}
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+          </div>
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Expires in</label>
+            <select value={form.expires_in} onChange={e => setForm({...form, expires_in: e.target.value})}
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-md px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]">
+              <option value="1d">1 day</option>
+              <option value="7d">7 days</option>
+              <option value="30d">30 days</option>
+              <option value="">Never</option>
+            </select>
+          </div>
+          <button onClick={handleGenerate} disabled={generating}
+            className="bg-[#635bff] hover:bg-[#7a73ff] text-white rounded-md px-4 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 w-full">
+            {generating ? "Generating..." : `Generate ${form.count} code${form.count > 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+
+      {/* Code list */}
+      <div className="lg:col-span-2 bg-white rounded-lg border border-[#e3e8ee] overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <table className="w-full text-[13px]">
+          <thead><tr className="border-b border-[#e3e8ee] bg-[#f6f9fc]">
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Code</th>
+            <th className="text-right px-4 py-3 text-[#8792a2] font-medium">Rotations</th>
+            <th className="text-right px-4 py-3 text-[#8792a2] font-medium">Uses</th>
+            <th className="text-left px-4 py-3 text-[#8792a2] font-medium">Expires</th>
+          </tr></thead>
+          <tbody>
+            {codes.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-[#8792a2]">No codes yet</td></tr>}
+            {codes.map(c => (
+              <tr key={c.id} className="border-b border-[#e3e8ee] hover:bg-[#f6f9fc]">
+                <td className="px-4 py-3 font-mono text-[12px]">
+                  <button onClick={() => navigator.clipboard.writeText(c.code)} className="hover:text-[#635bff] transition-colors" title="Click to copy">
+                    {c.code}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-right">{c.rotations} ({c.rotations * 20} cr)</td>
+                <td className="px-4 py-3 text-right">
+                  <span className={c.used_count >= c.max_uses ? "text-[#df1b41]" : "text-[#0caf60]"}>
+                    {c.used_count}/{c.max_uses}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-[12px] text-[#8792a2]">{c.expires_at ? new Date(c.expires_at).toLocaleDateString() : "Never"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (res.ok) {
+        onSuccess();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Login failed");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center">
+      <div className="bg-white rounded-2xl border border-[#e3e8ee] p-8 w-full max-w-sm" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
+        <div className="flex items-center gap-2 mb-6">
+          <div className="w-8 h-8 rounded-lg bg-[#635bff] flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+            </svg>
+          </div>
+          <div>
+            <div className="text-[15px] font-semibold text-[#0a2540]">Prism Admin</div>
+            <div className="text-[11px] text-[#8792a2]">Management Console</div>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Username</label>
+            <input type="text" value={username} onChange={e => setUsername(e.target.value)} autoFocus
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-lg px-3 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+          </div>
+          <div>
+            <label className="text-[12px] text-[#697386] block mb-1">Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-lg px-3 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+          </div>
+          {error && <p className="text-[12px] text-[#df1b41]">{error}</p>}
+          <button type="submit" disabled={loading || !username || !password}
+            className="bg-[#635bff] hover:bg-[#7a73ff] text-white rounded-lg px-4 py-2.5 text-[13px] font-medium transition-colors disabled:opacity-50 w-full">
+            {loading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
       </div>
     </div>
   );

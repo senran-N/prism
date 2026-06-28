@@ -7,6 +7,10 @@ type Config struct {
 	DatabaseURL string
 	BaseURL     string
 
+	// Admin credentials
+	AdminUser string
+	AdminPass string
+
 	// Session
 	SessionSecret string
 
@@ -39,6 +43,8 @@ func Load() Config {
 		Addr:               envOr("PRISM_ADDR", ":8080"),
 		DatabaseURL:        envOr("DATABASE_URL", "postgres://prism:prism@localhost:5432/prism?sslmode=disable"),
 		BaseURL:            envOr("BASE_URL", "http://localhost:3001"),
+		AdminUser:          envOr("ADMIN_USER", "admin"),
+		AdminPass:          envOr("ADMIN_PASS", "admin"),
 		SessionSecret:      envOr("SESSION_SECRET", "prism-dev-secret-change-me"),
 		LinuxDoClientID:     envOr("LINUXDO_CLIENT_ID", ""),
 		LinuxDoClientSecret: envOr("LINUXDO_CLIENT_SECRET", ""),
