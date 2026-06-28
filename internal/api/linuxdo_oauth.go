@@ -23,6 +23,7 @@ func (s *Server) handleLinuxDoLogin(w http.ResponseWriter, r *http.Request) {
 	params := url.Values{
 		"response_type": {"code"},
 		"client_id":     {s.cfg.LinuxDoClientID},
+		"redirect_uri":  {s.cfg.BaseURL + "/api/linuxdo/callback"},
 		"state":         {state},
 	}
 	http.Redirect(w, r, linuxdoAuthorize+"?"+params.Encode(), http.StatusFound)
@@ -42,7 +43,8 @@ func (s *Server) handleLinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Exchange code for token
-	token, err := exchangeLinuxDoCode(s.cfg.LinuxDoClientID, s.cfg.LinuxDoClientSecret, code)
+	redirectURI := s.cfg.BaseURL + "/api/linuxdo/callback"
+	token, err := exchangeLinuxDoCode(s.cfg.LinuxDoClientID, s.cfg.LinuxDoClientSecret, code, redirectURI)
 	if err != nil {
 		log.Printf("[linuxdo] token exchange error: %v", err)
 		http.Error(w, "token exchange failed", 500)
@@ -94,12 +96,13 @@ func (s *Server) handleLinuxDoStatus(w http.ResponseWriter, r *http.Request) {
 
 // ── LinuxDo API helpers ─────────────────────────
 
-func exchangeLinuxDoCode(clientID, clientSecret, code string) (string, error) {
+func exchangeLinuxDoCode(clientID, clientSecret, code, redirectURI string) (string, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"client_id":     {clientID},
 		"client_secret": {clientSecret},
 		"code":          {code},
+		"redirect_uri":  {redirectURI},
 	}
 	req, _ := http.NewRequest("POST", linuxdoToken, strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

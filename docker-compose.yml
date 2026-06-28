@@ -13,6 +13,8 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        API_URL: http://prism:8080
     ports:
       - "3001:3000"
     environment:
@@ -32,6 +34,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      - ./migrations/002_user_ban.sql:/docker-entrypoint-initdb.d/002_user_ban.sql
+      - ./migrations/003_credits_and_codes.sql:/docker-entrypoint-initdb.d/003_credits_and_codes.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prism"]
       interval: 3s
