@@ -3,7 +3,6 @@ package proxy
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 
@@ -49,8 +48,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Render an auto-login page: logs into SC, then redirects to ticket
-	targetURL := scBase + "/tickets/" + ticketID
+	// Login via hidden iframe, then redirect main page to ticket
+	ticketURL := scBase + "/tickets/" + ticketID
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Opening workspace...</title>
@@ -60,24 +59,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 </style></head><body>
 <div class="spinner"></div>
 <p>正在打开工作台 / Opening workspace...</p>
-<form id="f" method="POST" action="%s/log_in">
+<iframe name="loginframe" style="display:none"></iframe>
+<form id="login" method="POST" action="%s/log_in" target="loginframe">
 <input type="hidden" name="email" value="%s">
 <input type="hidden" name="password" value="%s">
 <input type="hidden" name="commit" value="Log In">
 </form>
 <script>
-// Submit login form, then redirect to ticket
-var f = document.getElementById("f");
-var xhr = new XMLHttpRequest();
-xhr.open("POST", "%s/log_in", true);
-xhr.withCredentials = true;
-xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-xhr.onload = function() { window.location.href = "%s"; };
-xhr.onerror = function() { window.location.href = "%s"; };
-var data = "email=%s&password=%s&commit=Log+In";
-xhr.send(data);
-</script></body></html>`,
-		scBase, acct.Email, acct.Password,
-		scBase, targetURL, targetURL,
-		url.QueryEscape(acct.Email), url.QueryEscape(acct.Password))
+document.getElementById("login").submit();
+setTimeout(function(){ window.location.href = "%s"; }, 3000);
+</script>
+</body></html>`,
+		scBase, acct.Email, acct.Password, ticketURL)
 }
