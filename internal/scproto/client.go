@@ -450,7 +450,7 @@ func (c *Client) CreateProject(repoID string) (projectID string, err error) {
 // CompleteEnvironmentSetup saves the environment configuration via the
 // "Configure Manually" form, bypassing the AI-assisted setup conversation
 // which can get stuck on simple repositories.
-func (c *Client) CompleteEnvironmentSetup(projectID string) error {
+func (c *Client) CompleteEnvironmentSetup(projectID, repoName string) error {
 	editURL := scBase + "/projects/" + projectID + "/environment/edit"
 	html, err := c.get(editURL)
 	if err != nil {
@@ -462,15 +462,13 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("no CSRF on env edit page")
 	}
 
-	// Extract the repo name from the page heading ("{name} Project Development Environment")
-	// or from the setup command textarea as fallback
-	repoName := projectID
-	rePageTitle := regexp.MustCompile(`([A-Za-z0-9_.-]+)\s+Project Development Environment`)
-	reSetupCmd := regexp.MustCompile(`cd /workspace/([^\s\n]+)`)
-	if m := rePageTitle.FindStringSubmatch(html); m != nil {
-		repoName = m[1]
-	} else if m := reSetupCmd.FindStringSubmatch(html); m != nil {
-		repoName = m[1]
+	if repoName == "" {
+		reSetupCmd := regexp.MustCompile(`cd /workspace/([^\s\n]+)`)
+		if m := reSetupCmd.FindStringSubmatch(html); m != nil {
+			repoName = m[1]
+		} else {
+			repoName = projectID
+		}
 	}
 
 	log.Printf("[scproto] saving environment config for project %s (repo: %s)", projectID, repoName)

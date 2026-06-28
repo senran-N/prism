@@ -47,6 +47,7 @@ func main() {
 		GitHubPass: cfg.GitHubPass,
 		GitHubTOTP: cfg.GitHubTOTP,
 		RepoID:     cfg.RepoID,
+		RepoName:   cfg.RepoName,
 	})
 
 	// Configure and start pool warmer

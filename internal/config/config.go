@@ -47,7 +47,8 @@ type Config struct {
 	PoolMaxWarm    int // max concurrent registrations (default 3)
 
 	// Default repo
-	RepoID string
+	RepoID   string
+	RepoName string
 }
 
 func Load() Config {
@@ -74,6 +75,7 @@ func Load() Config {
 		PoolMinReady:       int(envOrFloat("POOL_MIN_READY", 1)),
 		PoolMaxWarm:        int(envOrFloat("POOL_MAX_WARM", 3)),
 		RepoID:             envOr("REPO_ID", ""),
+		RepoName:           envOr("REPO_NAME", ""),
 	}
 }
 

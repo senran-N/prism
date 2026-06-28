@@ -20,6 +20,7 @@ type Config struct {
 	GitHubUser     string
 	GitHubPass     string
 	GitHubTOTP     string
+	RepoName       string
 	RepoID         string
 	InitialCredits float64
 }
@@ -111,7 +112,7 @@ func (s *Scheduler) rotate(userID int64) (*account.Account, error) {
 		return nil, fmt.Errorf("sc project: %w", err)
 	}
 
-	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
+	if err := sc.CompleteEnvironmentSetup(projectID, s.cfg.RepoName); err != nil {
 		log.Printf("[scheduler] env setup warning: %v", err)
 	}
 	if err := sc.WaitForEnvironment(projectID, 60*time.Second); err != nil {

@@ -81,7 +81,7 @@ func (s *Scheduler) registerOneAccount() error {
 		return err
 	}
 
-	if err := sc.CompleteEnvironmentSetup(projectID); err != nil {
+	if err := sc.CompleteEnvironmentSetup(projectID, s.cfg.RepoName); err != nil {
 		log.Printf("[warmer] env setup warning: %v", err)
 	}
 	if err := sc.WaitForEnvironment(projectID, 60*time.Second); err != nil {
