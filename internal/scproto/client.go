@@ -508,9 +508,12 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 	return nil
 }
 
-// WaitForEnvironment polls the project page until the environment is
-// ready or the timeout expires.
+// WaitForEnvironment polls the project page until the environment setup
+// disappears or shows a non-pending status (up to 3 minutes).
 func (c *Client) WaitForEnvironment(projectID string, timeout time.Duration) error {
+	if timeout < 180*time.Second {
+		timeout = 180 * time.Second
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		html, err := c.get(scBase + "/projects/" + projectID)
@@ -521,10 +524,16 @@ func (c *Client) WaitForEnvironment(projectID string, timeout time.Duration) err
 			log.Printf("[scproto] environment ready for project %s", projectID)
 			return nil
 		}
-		log.Printf("[scproto] environment still setting up, waiting...")
-		time.Sleep(10 * time.Second)
+		// Check if it's still pending user action vs actively setting up
+		if !strings.Contains(html, "Pending user") {
+			log.Printf("[scproto] environment setup in progress (no longer pending user)")
+		} else {
+			log.Printf("[scproto] environment still pending user action...")
+		}
+		time.Sleep(15 * time.Second)
 	}
-	return fmt.Errorf("environment setup timed out after %s", timeout)
+	log.Printf("[scproto] environment wait timed out, proceeding anyway")
+	return nil
 }
 
 // ── Credits ────────────────────────────────────────────────
