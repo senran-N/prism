@@ -39,7 +39,6 @@ function AuthenticatedApp() {
             {t("online")}
           </div>
           <LocaleSwitch />
-          <a href="/admin" className="text-[12px] text-[#8792a2] hover:text-[#635bff] transition-colors">{t("admin")}</a>
           <div className="flex items-center gap-2">
             {avatarUrl ? (
               <img src={avatarUrl} className="w-7 h-7 rounded-full" alt="" />

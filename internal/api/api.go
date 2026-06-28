@@ -86,6 +86,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	s.mux.HandleFunc("GET /api/admin/config", s.requireAdmin(s.handleAdminGetConfig))
 	s.mux.HandleFunc("POST /api/admin/config", s.requireAdmin(limitBody(1<<16, s.handleAdminUpdateConfig)))
+	s.mux.HandleFunc("POST /api/admin/users/{id}/credits", s.requireAdmin(limitBody(1<<14, s.handleAdminAddCredits)))
 	s.mux.HandleFunc("POST /api/admin/users/{id}/ban", s.requireAdmin(limitBody(1<<16, s.handleAdminBanUser)))
 	s.mux.HandleFunc("POST /api/admin/users/{id}/unban", s.requireAdmin(s.handleAdminUnbanUser))
 

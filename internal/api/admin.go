@@ -265,6 +265,27 @@ func (s *Server) handleAdminGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /api/admin/users/{id}/credits
+func (s *Server) handleAdminAddCredits(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Rotations int `json:"rotations"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Rotations < 1 {
+		req.Rotations = 1
+	}
+
+	userID, _ := strconv.ParseInt(id, 10, 64)
+	amount := float64(req.Rotations) * db.RotationCost
+	if err := db.AddBalance(userID, amount); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	log.Printf("[admin] added %d rotations (%.0f credits) to user %s", req.Rotations, amount, id)
+	writeJSON(w, map[string]any{"rotations": req.Rotations, "credits": amount})
+}
+
 // POST /api/admin/users/{id}/ban
 func (s *Server) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLocale, LocaleSwitch } from "@/app/ui/locale-context";
 
 interface Stats {
   pool: { ready: number; active: number; exhausted: number; total_credits: number; total: number };
@@ -43,6 +44,7 @@ export default function AdminPage() {
           <span className="text-[12px] text-[#8792a2] border border-[#e3e8ee] rounded px-1.5 py-0.5">Admin</span>
         </div>
         <div className="flex items-center gap-3">
+          <LocaleSwitch />
           <a href="/" className="text-[13px] text-[#697386] hover:text-[#0a2540]">← Back to app</a>
           <button onClick={async () => { await fetch("/api/admin/logout", { method: "POST" }); setAuthenticated(false); }} className="text-[12px] text-[#df1b41] hover:text-[#ff4d6a]">Logout</button>
         </div>
@@ -173,6 +175,8 @@ function UsersTab() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [banModal, setBanModal] = useState<{id: number; name: string} | null>(null);
   const [banReason, setBanReason] = useState("");
+  const [creditModal, setCreditModal] = useState<{id: number; name: string} | null>(null);
+  const [creditAmount, setCreditAmount] = useState(1);
 
   useEffect(() => { fetch("/api/admin/users").then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : [])); }, []);
 
@@ -180,6 +184,14 @@ function UsersTab() {
     await fetch(`/api/admin/users/${id}/ban`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: banReason }) });
     setUsers(users.map(u => u.id === id ? { ...u, is_banned: true, ban_reason: banReason } : u));
     setBanModal(null); setBanReason("");
+  }
+
+  async function handleAddCredits(id: number) {
+    const rotations = creditAmount;
+    await fetch(`/api/admin/users/${id}/credits`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotations }) });
+    setCreditModal(null); setCreditAmount(1);
+    // Refresh user list
+    fetch("/api/admin/users").then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : []));
   }
 
   async function handleUnban(id: number) {
@@ -226,7 +238,8 @@ function UsersTab() {
                     <span className="text-[11px] font-medium text-[#0caf60] bg-[#e6f9f0] px-2 py-0.5 rounded">Active</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => setCreditModal({ id: u.id, name: u.linuxdo_name || u.linuxdo_username || u.github_login })} className="text-[12px] text-[#635bff] hover:text-[#7a73ff] font-medium">+Credits</button>
                   {u.is_banned ? (
                     <button onClick={() => handleUnban(u.id)} className="text-[12px] text-[#0caf60] hover:text-[#0a9050] font-medium">Unban</button>
                   ) : (
@@ -238,6 +251,26 @@ function UsersTab() {
           </tbody>
         </table>
       </div>
+
+      {/* Credit Modal */}
+      {creditModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setCreditModal(null)}>
+          <div className="bg-white rounded-xl border border-[#e3e8ee] p-6 w-full max-w-md" style={{ boxShadow: "0 10px 40px rgba(0,0,0,0.12)" }} onClick={e => e.stopPropagation()}>
+            <h3 className="text-[16px] font-semibold text-[#0a2540] mb-1">Add Credits</h3>
+            <p className="text-[13px] text-[#697386] mb-4">Add rotation credits to <strong>{creditModal.name}</strong>.</p>
+            <div className="mb-4">
+              <label className="text-[12px] text-[#697386] block mb-1">Rotations to add (×20 credits each)</label>
+              <input type="number" min={1} max={100} value={creditAmount} onChange={e => setCreditAmount(+e.target.value)}
+                className="w-full bg-[#f6f9fc] border border-[#e3e8ee] rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#635bff]/20 focus:border-[#635bff]" />
+              <p className="text-[11px] text-[#8792a2] mt-1">Will add {creditAmount * 20} credits to user balance</p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setCreditModal(null)} className="px-4 py-2 text-[13px] text-[#697386] hover:text-[#0a2540]">Cancel</button>
+              <button onClick={() => handleAddCredits(creditModal.id)} className="px-4 py-2 text-[13px] font-medium text-white bg-[#635bff] hover:bg-[#7a73ff] rounded-lg">Add Credits</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ban Modal */}
       {banModal && (
