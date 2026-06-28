@@ -1,15 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async rewrites() {
+    const apiUrl = process.env.API_URL || "http://localhost:8080";
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:8080/api/:path*",
+        destination: `${apiUrl}/api/:path*`,
       },
       {
         source: "/proxy/:path*",
-        destination: "http://localhost:8080/proxy/:path*",
+        destination: `${apiUrl}/proxy/:path*`,
       },
     ];
   },

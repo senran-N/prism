@@ -1,5 +1,5 @@
-# Go
-prism
+# Go binary (root only, not cmd/prism/ directory)
+/prism
 *.exe
 *.test
 *.out
