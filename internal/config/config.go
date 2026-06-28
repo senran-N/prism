@@ -71,7 +71,7 @@ func Load() Config {
 		GitHubPass:         envOr("GITHUB_PASS", ""),
 		GitHubTOTP:         envOr("GITHUB_TOTP", ""),
 		YYDSAPIKey:         envOr("YYDS_API_KEY", ""),
-		PoolMinReady:       int(envOrFloat("POOL_MIN_READY", 5)),
+		PoolMinReady:       int(envOrFloat("POOL_MIN_READY", 1)),
 		PoolMaxWarm:        int(envOrFloat("POOL_MAX_WARM", 3)),
 		RepoID:             envOr("REPO_ID", ""),
 	}

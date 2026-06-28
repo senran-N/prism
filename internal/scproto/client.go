@@ -470,33 +470,24 @@ func (c *Client) CompleteEnvironmentSetup(projectID string) error {
 		return fmt.Errorf("get env setup: %w", err)
 	}
 
-	fields := extractFormFields(setupHTML)
-	if fields.CSRF == "" {
+	csrf := extractCSRF(setupHTML)
+	if csrf == "" {
 		return fmt.Errorf("no CSRF on env setup page")
 	}
 
-	data := buildFormData(fields, [][2]string{
-		{"_method", "patch"},
-		{"commit", "Confirm"},
-	})
-
-	for _, match := range reTextarea.FindAllStringSubmatch(setupHTML, -1) {
-		data.Set(match[1], strings.TrimSpace(match[2]))
+	// Only send the minimal fields needed to confirm the setup.
+	// The page has multiple unrelated forms (chat, workspace settings)
+	// so we must NOT extract fields from all of them.
+	data := url.Values{
+		"authenticity_token": {csrf},
+		"_method":            {"patch"},
+		"commit":             {"Confirm"},
 	}
 
-	for _, match := range reHidden.FindAllStringSubmatch(setupHTML, -1) {
-		name := match[1]
-		if name != "authenticity_token" && name != "_method" && name != "spinner" {
-			if _, exists := data[name]; !exists {
-				data.Set(name, match[2])
-			}
-		}
-	}
-
-	log.Printf("[scproto] env setup form keys: %v", keysOf(data))
+	log.Printf("[scproto] env setup POST: %s", setupURL)
 
 	_, finalURL, status, err := c.post(setupURL, data, map[string]string{
-		"X-CSRF-Token": fields.CSRF,
+		"X-CSRF-Token": csrf,
 		"Accept":       "text/vnd.turbo-stream.html, text/html, application/xhtml+xml",
 	})
 	if err != nil {
